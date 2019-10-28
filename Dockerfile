@@ -2,7 +2,7 @@ FROM centos:8
 
 LABEL maintainer="Scott D. Peckham <Scott.Peckham@colorado.edu>" contributor="Rajiv Mayani <mayani@isi.edu>"
 
-RUN yum -y update && yum -y install python36
+RUN yum -y update && yum -y install python36 unzip
 
 RUN mkdir /srv/topoflow
 
