@@ -7,4 +7,5 @@ RUN apt update && apt install -y unzip zip
 
 RUN mkdir /srv/topoflow
 ADD . /srv/topoflow
+ADD build_viz.py /usr/bin
 RUN cd /srv/topoflow && pip install .
