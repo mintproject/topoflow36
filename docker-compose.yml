@@ -1,0 +1,7 @@
+version: '3'
+services:
+  dev:
+    image: "mintproject/topoflow:latest_viz"
+    build:
+      context: .
+      dockerfile: Dockerfile-viz
