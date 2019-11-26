@@ -4,8 +4,3 @@ RUN conda install -c conda-forge cartopy -y \
 		&& conda install  xarray  numpy pandas matplotlib imageio -y
 
 RUN apt update && apt install -y unzip zip
-
-RUN mkdir /srv/topoflow
-ADD . /srv/topoflow
-ADD build_viz.py /usr/bin
-RUN cd /srv/topoflow && pip install .
