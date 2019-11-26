@@ -1,7 +1,7 @@
 version: '3'
 services:
   dev:
-    image: "mintproject/topoflow:v2"
+    image: "mintproject/topoflow:viz_v2"
     build:
       context: .
       dockerfile: Dockerfile-viz
