@@ -6,4 +6,4 @@ RUN conda install -c conda-forge cartopy -y \
 RUN apt update && apt install -y unzip zip
 RUN mkdir /srv/topoflow
 ADD . /srv/topoflow
-RUN cd /srv/topoflow && pip3 install .
+RUN cd /srv/topoflow && /opt/conda/bin/pip install .
