@@ -6,13 +6,17 @@
 # S.D. Peckham
 # Sept 2014 (new version to use netCDF4)
 # May, June 2010
+# Nov 2019  (MINT netCDF compliance)
 
 import os
 import sys
 import time
+import datetime
 
 import numpy as np
 from . import file_utils
+from . import tf_utils
+from . import rti_files
 
 import netCDF4 as nc
 
@@ -39,6 +43,11 @@ import netCDF4 as nc
 #       add_values_at_IDs()
 #-----------------------------
 #       add_series()
+#       get_var_names()        # 2019-11-21
+#       get_var_long_name()    # 2019-11-24
+#       get_var_units()        # 2019-11-24
+#       get_var_lons()         # 2019-11-24
+#       get_var_lats()         # 2019-11-24
 #       get_series()
 #-----------------------------
 #       close_file()
@@ -60,14 +69,20 @@ def unit_test1(n_values=10, VERBOSE=False,
     # Make instance of ncts_file() class
     #-------------------------------------
     ncts = ncts_file()
-    var_names = ['depth']
+    var_names = ['Q_3_6', 'Q_4_5']
 
+    info = rti_files.make_info( file_name, ncols=10, nrows=12,
+                                xres=900.0, yres=900.0,
+                                x_west_edge=0.0, x_east_edge=1.0,
+                                y_south_edge=0.0, y_north_edge=1.5 )
+    ncts.info = info
+                                    
     OK = ncts.open_new_file( file_name,
                              var_names=var_names,
-                             long_names=["depth of water"],
-                             units_names=["meters"],
+                             long_names=['volumetric discharge'],
+                             units_names=['m3 s-1'],
                              dtypes=['float32'],
-                             comment="Created by TopoFlow 3.0.")
+                             comment="Created by TopoFlow 3.6.")
                              ## time_long_name='time',
                              ## time_units_name="minutes")
 
@@ -256,6 +271,10 @@ class ncts_file():
             ### return ncts_unit
             return True
         except:
+            print('ERROR: Could not open file:')
+            print( '   ' + file_name )
+            print( 'Current working directory =')
+            print( '   ' + os.getcwd() )
             return False
     
     #   open_file()
@@ -294,15 +313,16 @@ class ncts_file():
     
     #   get_dtype_map()
     #----------------------------------------------------------
-    def open_new_file(self, file_name,
-                      var_names=['X'],
-                      long_names=[None],
+    def open_new_file(self, file_name, info,
+                      var_names=['Z_2_3'],
+                      long_names=['None'],
                       units_names=['None'],
                       dtypes=['float32'],
                       ### dtypes=['float64'],
                       time_units='minutes',
+                      time_res='60.0',
                       comment=''):
-
+              
         #----------------------------
         # Does file already exist ?
         #----------------------------
@@ -316,6 +336,31 @@ class ncts_file():
         self.time_index = 0
         if (long_names[0] is None):
             long_names = var_names
+
+        #######################################################             
+        # Assume for now that var_names only differ by the
+        # appended row and column info, so only need one
+        # long_name and one units_name
+        #######################################################    
+        long_name  = long_names[0]
+        units_name = units_names[0]
+        
+        #-------------------------------------------
+        # Need this to compute grid cell lat & lon
+        #-------------------------------------------
+        xres_deg = (info.xres / 3600.0)
+        yres_deg = (info.yres / 3600.0)
+        minlon   = info.x_west_edge
+        maxlon   = info.x_east_edge
+        minlat   = info.y_south_edge
+        maxlat   = info.y_north_edge
+        #-------------------------------------------        
+#         xres_deg = (self.info.xres / 3600.0)
+#         yres_deg = (self.info.yres / 3600.0)
+#         minlon   = self.info.x_west_edge
+#         maxlon   = self.info.x_east_edge
+#         minlat   = self.info.y_south_edge
+#         maxlat   = self.info.y_north_edge
         #-------------------------------------------
         # We may not need to save these in self.
         # I don't think they're used anywhere yet.
@@ -371,9 +416,38 @@ class ncts_file():
         #-------------------------------------
         history = "Created using netCDF4 " + nc.__version__ + " on "
         history = history + time.asctime() + ". " 
-        history = history + comment
-        ncts_unit.history = history
-                
+ 
+        #---------------------------------------------------       
+        # Create title, summary and other metadata strings
+        #---------------------------------------------------
+        title = 'Time series data for variable: ' + long_name
+        tf_version = str(tf_utils.TF_Version_Number())
+        summary  = 'This file contains one or more time series for '
+        summary += 'the single variable: ' + long_name + ', at '
+        summary += 'model grid cells specified in an outlets file. '
+        summary += 'Short var names have form:  symbol_row_col.'
+        email = 'Scott.Peckham@colorado.edu'
+        date_created = str( datetime.date.today() )
+        naming_authority = 'edu.isi.workflow'
+        if (comment == ''):
+            comment = 'Created by TopoFlow version ' + tf_version + '.'
+        else:
+            history += comment
+
+        #-----------------------------------------
+        # Save some global attributes (metadata)
+        #-----------------------------------------
+        ncts_unit.title             = title
+        ncts_unit.summary           = summary
+        ncts_unit.comment           = comment
+        ncts_unit.history           = history
+        ncts_unit.creator_email     = email
+        ncts_unit.date_created      = date_created 
+        ncts_unit.naming_authority  = naming_authority   
+        ncts_unit.geospatial_bounds_crs = '+init=epsg:4979'
+        ## bounds = [minlon, minlat, maxlon, maxlat]   #### MINT order
+        ## ncts_unit.geospatial_bounds = bounds 
+                       
         #------------------------------------------------
         # Create an unlimited time dimension (via None)
         #------------------------------------------------
@@ -382,8 +456,8 @@ class ncts_file():
         #------------------------------------------------
         ncts_unit.createDimension("time", None)
 
-        #-------------------------
-        # Create a time variable
+        #------------------------------------------
+        # Save attributes of coordinate var, time
         #---------------------------------------------------
         #('f' = float32; must match in add_values_at_IDs()
         #---------------------------------------------------
@@ -392,7 +466,11 @@ class ncts_file():
         #---------------------------------------------------
         tvar = ncts_unit.createVariable('time', 'f8', ("time",))
         ncts_unit.variables['time'].units = time_units
-        
+        ncts_unit.variables['time'].time_coverage_resolution = time_res    
+        # ncts_unit.variables['time'].time_coverage_start = start_time 
+        # ncts_unit.variables['time'].time_coverage_end = end_time 
+        # ncts_unit.variables['time'].time_coverage_duration = duration
+                
         #-----------------------------------
         # Create variables using var_names
         #-----------------------------------
@@ -406,11 +484,34 @@ class ncts_file():
             var_name = var_names[k]
             var = ncts_unit.createVariable(var_name, dtype_codes[k], ("time",))
         
-            #------------------------------------
-            # Create attributes of the variable
-            #------------------------------------
-            ncts_unit.variables[var_name].long_name = long_names[k]
-            ncts_unit.variables[var_name].units     = units_names[k]        
+            #-----------------------------------------
+            # Create attributes of the main variable
+            #-----------------------------------------
+            # ncts_unit.variables[var_name].standard_name = standard_names[k] 
+            # ncts_unit.variables[var_name].long_name = long_names[k]
+            # ncts_unit.variables[var_name].units     = units_names[k] 
+            #-------------------------------------------------------------            
+            # ncts_unit.variables[var_name].standard_name = standard_names[k] 
+            ncts_unit.variables[var_name].long_name = long_name
+            ncts_unit.variables[var_name].units     = units_name       
+            ncts_unit.variables[var_name].n_values  = 0   ##########
+            #-------------------------------------------------------------
+            # Compute & save geospatial info
+            #----------------------------------
+            ## print('var_name =', var_name)
+            p   = var_name.split('_')
+            row = np.int16( p[1] )
+            col = np.int16( p[2] )
+            lon = minlon + (col * xres_deg)
+            lat = minlat + (row * yres_deg)
+            ncts_unit.variables[var_name].geospatial_lon = lon
+            ncts_unit.variables[var_name].geospatial_lat = lat            
+            #----------------------------------------------------------------           
+#         ncts_unit.variables[var_name].valid_min     = valid_min
+#         ncts_unit.variables[var_name].valid_max     = valid_max
+#         ncts_unit.variables[var_name].valid_range   = valid_range
+#         ncts_unit.variables[var_name].missing_value = missing_value
+#         ncts_unit.variables[var_name].fill_value    = fill_value  
 
             #----------------------------------
             # Specify a "nodata" fill value ?
@@ -468,7 +569,8 @@ class ncts_file():
         #---------------------------------------------
         values = self.ncts_unit.variables[ var_name ]
         values[ time_index ] = value
-
+        self.ncts_unit.variables[ var_name ].n_values += 1
+        
         ####################################################
         # We shouldn't update clock in every add_value()
         # call because different values (for same time)
@@ -584,7 +686,8 @@ class ncts_file():
             vname  = var_name + row_str + col_str
             values = self.ncts_unit.variables[ vname ]
             values[ time_index ] = vals[k]
-
+            values.n_values += 1
+        
         #---------------------------
         # Increment the time index
         #---------------------------
@@ -629,12 +732,63 @@ class ncts_file():
         
     #   add_series()
     #----------------------------------------------------------
+    def get_var_names(self):
+    
+        var_dict = self.ncts_unit.variables
+        return list( var_dict.keys() )
+
+    #   get_var_names()
+    #----------------------------------------------------------
+    def get_var_long_name(self, var_name ):
+
+        var = self.ncts_unit.variables[ var_name ]
+        return var.long_name 
+            
+    #   get_var_long_name()
+    #----------------------------------------------------------
+    def get_var_units(self, var_name ):
+
+        var = self.ncts_unit.variables[ var_name ]
+        return var.units
+
+    #   get_var_units()
+    #----------------------------------------------------------
+    def get_var_lons(self):
+        
+        var_names = self.get_var_names()
+        var_names = var_names[1:]    # exclude 'time'
+        lons = []
+        for name in var_names:
+            var = self.ncts_unit.variables[ name ]
+            lons.append( var.geospatial_lon )
+        return lons
+ 
+    #   get_var_lons()
+    #----------------------------------------------------------
+    def get_var_lats(self):
+        
+        var_names = self.get_var_names()
+        var_names = var_names[1:]    # exclude 'time'
+        lats = []
+        for name in var_names:
+            var = self.ncts_unit.variables[ name ]
+            lats.append( var.geospatial_lat )
+        return lats
+ 
+    #   get_var_lats()
+    #----------------------------------------------------------
     def get_series(self, var_name):
 
+        #----------------------------------------------------------
+        # Note:  Attributes such as long_name and units can
+        #        be obtained as series.units or series.long_name.
+        #        The actual values can be obtained from:
+        #        values = series[:], or np.array(series)
+        #----------------------------------------------------------
         series = self.ncts_unit.variables[ var_name ]
         times  = self.ncts_unit.variables[ 'time' ]
         return (series, times)
-        
+               
     #   get_series()
     #-------------------------------------------------------------------
     def close_file(self):

@@ -7,7 +7,8 @@
 # October 2009  routines to allow more output file formats)
 # August 2009
 # January 2009  Converted from IDL.
-#
+# Nov. 2019     Minor changes for MINT netCDF compliance
+
 #-------------------------------------------------------------------
 #  Functions:
 #
@@ -116,6 +117,11 @@ def open_new_gs_file(self, file_name, info=None,
                      time_units='minutes',
                      nx=None, ny=None, dx=None, dy=None):
 
+    #------------------------------
+    # Could also just do this now
+    #------------------------------
+    ### info = self.rti
+    
     #---------------------------
     # Was grid info provided ?
     #---------------------------
@@ -149,6 +155,9 @@ def open_new_gs_file(self, file_name, info=None,
     ncgs_unit_str = "self." + var_name + "_ncgs_unit"
     ncgs_file_str = "self." + var_name + "_ncgs_file"
     gs_file_str   = "self." + var_name + "_gs_file"
+    time_res_sec  = self.save_grid_dt    # [seconds]
+    time_res_min  = (time_res_sec / 60)  # [minutes]
+ 
     #-------------------
     # For testing only
     #-------------------
@@ -178,7 +187,7 @@ def open_new_gs_file(self, file_name, info=None,
         exec( ncgs_unit_str + "=" + "ncgs_files.ncgs_file()" )
         exec( ncgs_unit_str + ".open_new_file(" + ncgs_file_str +
               ", self.rti, var_name, long_name, units_name, " +
-              "dtype=dtype, time_units=time_units)" )
+              "dtype=dtype, time_units=time_units, time_res=time_res_min)" )
         #----------------------------------------
         # (2019-10-03)  This isn't needed here.
         #----------------------------------------
@@ -307,6 +316,7 @@ def open_new_ts_file(self, file_name, IDs, ####
     var_names   = []
     long_names  = []
     units_names = []
+    dtypes      = []
     rows        = IDs[0]
     cols        = IDs[1]
     for k in range(n_IDs):
@@ -325,12 +335,19 @@ def open_new_ts_file(self, file_name, IDs, ####
         var_names.append( vname )
         long_names.append( long_name )
         units_names.append( units_name )
-                  
+        dtypes.append( dtype )   #######
+
+    #-------------------------------------
+    # Get temporal resolution (time_res) 
+    #-------------------------------------
+    time_res_sec  = self.save_pixels_dt  # [seconds]
+    time_res_min  = (time_res_sec / 60)  # [minutes]
+            
     #--------------------------------------------
     # Open new netCDF file to write time series
     # using var_name to build variable names
     #--------------------------------------------
-    try:
+    try:           
         ncts_unit_str = "self." + var_name + "_ncts_unit"
         ncts_file_str = "self." + var_name + "_ncts_file"
         ts_file_str   = "self." + var_name + "_ts_file"
@@ -338,9 +355,9 @@ def open_new_ts_file(self, file_name, IDs, ####
               ts_file_str + ", '.nc')" )
         exec( ncts_unit_str + "=" + "ncts_files.ncts_file()" )
         exec( ncts_unit_str + ".open_new_file(" + ncts_file_str +
-              ", var_names, long_names, units_names," +
-              "dtypes=[dtype], "
-              "time_units=time_units)" )
+              ", self.rti, var_names, long_names, units_names," +
+              "dtypes=dtypes, "
+              "time_units=time_units, time_res=time_res_min)" )
         MAKE_TTS = False
     except:
         print('ERROR: Unable to open new netCDF file:')
