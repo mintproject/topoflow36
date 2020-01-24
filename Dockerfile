@@ -1,10 +1,10 @@
-FROM centos:7.6.1810
+FROM continuumio/miniconda3
 
-LABEL maintainer="Scott D. Peckham <Scott.Peckham@colorado.edu>" contributor="Rajiv Mayani <mayani@isi.edu>"
+RUN conda install -c conda-forge cartopy -y \
+		&& conda install  xarray  numpy pandas matplotlib imageio -y
 
-RUN  yum -y install python36 unzip zip
-
+RUN apt update && apt install -y unzip zip
 RUN mkdir /srv/topoflow
-
 ADD . /srv/topoflow
-RUN cd /srv/topoflow && pip3 install .
+RUN cd /srv/topoflow && /opt/conda/bin/pip install .
+RUN /opt/conda/bin/pip install imageio-ffmpeg
