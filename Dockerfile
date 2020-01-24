@@ -1,7 +1,7 @@
 FROM continuumio/miniconda3
 
-RUN conda install -c conda-forge cartopy -y \
-		&& conda install  xarray  numpy pandas matplotlib imageio -y
+ADD environment.yml /tmp/environment.yml
+RUN conda env update -f /tmp/environment.yml
 
 RUN apt update && apt install -y unzip zip
 RUN mkdir /srv/topoflow
