@@ -253,6 +253,7 @@ class d8_component( BMI_base.BMI_component ):
     def initialize(self, cfg_file=None, mode='nondriver',
                    SILENT=False, REPORT=True):
 
+        self.SILENT = SILENT
         #--------------------------------------------------------
         # Note:  This function calls functions that compute a
         #        variety of D8 variables and saves them in its
@@ -260,11 +261,11 @@ class d8_component( BMI_base.BMI_component ):
         #        another class such as the "channels_base" or
         #        "erosion_base" class.
         #--------------------------------------------------------
-        if not(SILENT):
+        if not(self.SILENT):
             print('D8 component: Initializing...')
 
-        self.status     = 'initializing'  # (OpenMI 2.0 convention)
-        self.mode       = mode
+        self.status = 'initializing'  # (OpenMI 2.0 convention)
+        self.mode   = mode
 
         if (cfg_file == None):
             #-----------------------------------------------------------------
@@ -275,13 +276,9 @@ class d8_component( BMI_base.BMI_component ):
             cfg_extension = self.get_attribute( 'cfg_extension' )  #########
             # print 'cfg_extension =', cfg_extension
             # print 'case_prefix = ', self.case_prefix
-
-            
             filename      = self.case_prefix + cfg_extension
-            #filename      = self.site_prefix + cfg_extension
             cfg_file      = self.in_directory + filename
-            ## self.cfg_file   = os.path.join( os.getcwd(), filename )
-            ## self.cfg_prefix = self.site_prefix
+
         self.cfg_file = cfg_file
         
         ## print 'In d8_base.initialize(), cfg_file =', cfg_file  #########
@@ -327,22 +324,22 @@ class d8_component( BMI_base.BMI_component ):
         # Values that do depend on the flow grid are
         # computed by calls in the update() method.
         #-----------------------------------------------        
-        self.get_pixel_dimensions(SILENT=SILENT, REPORT=REPORT)
+        self.get_pixel_dimensions(REPORT=REPORT)
         self.get_flow_code_list()
         self.get_flow_code_list_opps()
-        self.get_ID_grid(SILENT=SILENT)
+        self.get_ID_grid()
         self.get_parent_inc_map()
-        self.get_edge_IDs(SILENT=SILENT)
-        self.get_not_edge_grid(SILENT=SILENT)
+        self.get_edge_IDs()
+        self.get_not_edge_grid()
         #-------------------------------------------------
-        self.get_resolve_array(SILENT=SILENT)   ######
-        self.get_valid_code_map(SILENT=SILENT)
+        self.get_resolve_array()   ######
+        self.get_valid_code_map()
         
         #-----------------------------
         # Initialize dw, ds, A, etc.
         #-----------------------------
         ## self.initialize_time_vars()  # (done above now)
-        self.initialize_computed_vars(SILENT=SILENT, REPORT=REPORT)
+        self.initialize_computed_vars(REPORT=REPORT)
         
         self.open_output_files()    # (added on 11/8/11) ###################
         self.status = 'initialized'
@@ -352,11 +349,10 @@ class d8_component( BMI_base.BMI_component ):
         
     #   initialize()
     #-------------------------------------------------------------------
-    def update(self, time=None, DEM=None,
-               SILENT=True, REPORT=False):
+    def update(self, time=None, DEM=None, REPORT=False):
 
         self.status = 'updating'  # (OpenMI 2.0 convention)
-        if not(SILENT):
+        if not(self.SILENT):
             print('D8 component: Updating...')
         # if (self.mode == 'main'):
         #     self.print_time_and_value(self.z_outlet, 'z_out', '[m]')
@@ -368,8 +364,7 @@ class d8_component( BMI_base.BMI_component ):
         #------------------------------------------------------
         ## fill_pits.fill_pits()   ## pass DEM to here? ## 
 
-        self.update_flow_grid(DEM=DEM,
-                              SILENT=SILENT, REPORT=REPORT)
+        self.update_flow_grid(DEM=DEM, REPORT=REPORT)
         self.update_parent_ID_grid()
         self.update_parent_IDs()     # (needed for gradients)
         self.update_flow_from_IDs()
@@ -380,9 +375,9 @@ class d8_component( BMI_base.BMI_component ):
         # "noflow_IDs" were not being used. (1/25/12)
         #-----------------------------------------------------------
         ### self.update_noflow_IDs()
-        self.update_flow_width_grid(SILENT=SILENT, REPORT=REPORT)   # (dw)
-        self.update_flow_length_grid(SILENT=SILENT, REPORT=REPORT)  # (ds)
-        self.update_area_grid(SILENT=SILENT, REPORT=REPORT)
+        self.update_flow_width_grid( REPORT=REPORT )   # (dw)
+        self.update_flow_length_grid( REPORT=REPORT )  # (ds)
+        self.update_area_grid( REPORT=REPORT )
 
         #-------------------------------------------
         # Read from files as needed to update vars 
@@ -437,9 +432,8 @@ class d8_component( BMI_base.BMI_component ):
         # self.save_pixels_dt = maximum(self.save_pixels_dt, self.dt)
         
     #   set_computed_input_vars()
-##    #-------------------------------------------------------------------
-    def initialize_computed_vars(self, DOUBLE=False,
-                                 SILENT=True, REPORT=False):
+    #-------------------------------------------------------------------
+    def initialize_computed_vars(self, DOUBLE=False, REPORT=False):
 
         self.RT3_TEST = False  # (default setting)
         nx = self.nx  # (Local synonyms)
@@ -462,13 +456,13 @@ class d8_component( BMI_base.BMI_component ):
         # NB! start_new_d8_codes() has a DEM argument
         # that is used by erode_d8_global.py, etc.
         #----------------------------------------------
-        self.DEM_file = (self.in_directory + self.DEM_file)  ######## (11/11/16, QUICK FIX)
+        self.DEM_file = (self.topo_directory + self.DEM_file)  ######## (11/11/16, QUICK FIX)
         if not( os.path.exists(self.DEM_file) ):
             print('ERROR: Could not find DEM file:')
             print(self.DEM_file)
             return
-        DEM = rtg_files.read_grid( self.DEM_file, self.rti, SILENT=False )
-        if not(SILENT):
+        DEM = rtg_files.read_grid( self.DEM_file, self.rti, SILENT=self.SILENT )
+        if not(self.SILENT):
             print('   min(DEM), max(DEM) =', DEM.min(), DEM.max())
         self.DEM = DEM
 
@@ -476,10 +470,11 @@ class d8_component( BMI_base.BMI_component ):
         # Option to fill pits in the initial DEM (11/7/11)
         #---------------------------------------------------
         if (self.FILL_PITS_IN_Z0):
-            print(' ')
-            print('Filling pits in initial DEM...')
+            if not(self.SILENT):
+                print()
+                print('Filling pits in initial DEM...')
             fill_pits.fill_pits( self.DEM, 'FLOAT', self.nx, self.ny,
-                                 SILENT=SILENT )
+                                 SILENT=self.SILENT )
             #--------------------------
             # Save new DEM to a file. 
             #-------------------------- 
@@ -491,10 +486,9 @@ class d8_component( BMI_base.BMI_component ):
 
     #   initialize_computed_vars() 
     #---------------------------------------------------------------------
-    def get_pixel_dimensions(self, DOUBLE=False,
-                             SILENT=True, REPORT=False):
+    def get_pixel_dimensions(self, DOUBLE=False, REPORT=False):
 
-        if not(SILENT):
+        if (self.DEBUG):
             print('Computing pixel dimensions...')
 
         dx, dy, dd = pixels.get_sizes_by_row(self.rti, METERS=True)
@@ -584,7 +578,7 @@ class d8_component( BMI_base.BMI_component ):
         
     #   get_flow_code_list_opps()
     #---------------------------------------------------------------------
-    def get_valid_code_map(self, SILENT=True):
+    def get_valid_code_map(self):
 
         #-----------------------------------------------------------------
         # Notes: This map is used near the end of update_flow_grid()
@@ -596,13 +590,13 @@ class d8_component( BMI_base.BMI_component ):
 
     #   get_valid_code_map()
     #---------------------------------------------------------------------
-    def get_ID_grid(self, SILENT=True):
+    def get_ID_grid(self):
 
         #-----------------------------------------------------
         # Get a grid which for each grid cell contains the
         # calendar-style index (or ID) of that grid cell.
         #-----------------------------------------------------
-        if not(SILENT):
+        if (self.DEBUG):
             print('Computing pixel IDs...')
         
         nx = self.nx
@@ -629,9 +623,9 @@ class d8_component( BMI_base.BMI_component ):
         
     #   get_parent_inc_map()       
     #-------------------------------------------------------------------
-    def get_edge_IDs(self, SILENT=True):
+    def get_edge_IDs(self):
 
-        if not(SILENT):
+        if (self.DEBUG):
             print('Computing edge pixel IDs...')
 
         #------------------------------------------
@@ -660,9 +654,9 @@ class d8_component( BMI_base.BMI_component ):
         
     #   get_edge_IDs()
     #---------------------------------------------------------------------
-    def get_not_edge_grid(self, SILENT=True):
+    def get_not_edge_grid(self):
 
-        if not(SILENT):
+        if (self.DEBUG):
             print('Computing "not_edge" grid...')
 
         self.not_edge_grid = np.ones([self.ny, self.nx],
@@ -698,7 +692,7 @@ class d8_component( BMI_base.BMI_component ):
         
     #   resolve_array_cycle()
     #---------------------------------------------------------------------
-    def get_resolve_array(self, SILENT=True, REPORT=False):
+    def get_resolve_array(self, REPORT=False):
 
         #------------------------------------------------------
         # NOTES:  RT/SJ D8 flow direction codes are given by:
@@ -709,7 +703,7 @@ class d8_component( BMI_base.BMI_component ):
         #
         # (9/20/11) Confirmed that this agrees with RT3.
         #------------------------------------------------------
-        if not(SILENT):
+        if (REPORT):
             print('Computing "resolve array"...')
             
         resolve = np.zeros([256], dtype='UInt8')
@@ -761,7 +755,7 @@ class d8_component( BMI_base.BMI_component ):
         
     #   get_resolve_array()
     #---------------------------------------------------------------------
-    def update_parent_ID_grid(self, SILENT=True):
+    def update_parent_ID_grid(self):
 
         #----------------------------------------------
         # (1/25/12) d8_global.py and d8_local.py each
@@ -813,12 +807,12 @@ class d8_component( BMI_base.BMI_component ):
 
     #   update_noflow_IDs()
     #-------------------------------------------------------------------
-    def read_flow_grid(self, SILENT=True):
+    def read_flow_grid(self):  ######  SILENT=True):
 
         #----------------------------------------------------
         # Read a grid of D8 flow codes, same size as DEM.
         #----------------------------------------------------
-        if not(SILENT):
+        if not(self.SILENT):
             print('Reading D8 flow grid...')
         code_file = (self.directory +
                      self.data_prefix + '_flow.rtg')
@@ -827,7 +821,7 @@ class d8_component( BMI_base.BMI_component ):
 
     #   read_flow_grid()
     #-------------------------------------------------------------------
-    def update_flow_grid(self, DEM=None, SILENT=True, REPORT=False):
+    def update_flow_grid(self, DEM=None, REPORT=False):
 
         #----------------------------------------------
         # (1/25/12) d8_global.py and d8_local.py each
@@ -837,9 +831,8 @@ class d8_component( BMI_base.BMI_component ):
  
     #   update_flow_grid()
     #-------------------------------------------------------------------    
-    def start_new_d8_codes(self, DEM=None,
-                           z=None, IDs=None,
-                           SILENT=True, REPORT=False):
+    def start_new_d8_codes(self, DEM=None, z=None, IDs=None,
+                           REPORT=False):
 
         #----------------------------------------------
         # (1/25/12) d8_global.py and d8_local.py each
@@ -849,7 +842,7 @@ class d8_component( BMI_base.BMI_component ):
 
     #   start_new_d8_codes()
     #-------------------------------------------------------------------    
-    def break_flow_grid_ties(self, SILENT=True):
+    def break_flow_grid_ties(self):
 
         #----------------------------------------------
         # (1/25/12) d8_global.py and d8_local.py each
@@ -859,7 +852,7 @@ class d8_component( BMI_base.BMI_component ):
 
     #   break_flow_grid_ties()
     #-------------------------------------------------------------------    
-    def link_flats(self, SILENT=True):
+    def link_flats(self):
 
         #----------------------------------------------
         # (1/25/12) d8_global.py and d8_local.py each
@@ -870,7 +863,7 @@ class d8_component( BMI_base.BMI_component ):
     #   link_flats()    
     #-------------------------------------------------------------------    
     def update_flow_width_grid(self, DOUBLE=False, METHOD2=False,
-                               SILENT=True, REPORT=False):
+                               REPORT=False):
 
         #----------------------------------------------
         # (1/25/12) d8_global.py and d8_local.py each
@@ -881,7 +874,7 @@ class d8_component( BMI_base.BMI_component ):
     #   update_flow_width_grid()
     #-------------------------------------------------------------------
     def update_flow_length_grid(self, DOUBLE=False,
-                                SILENT=True, REPORT=False):
+                                REPORT=False):
 
         #----------------------------------------------
         # (1/25/12) d8_global.py and d8_local.py each
@@ -891,7 +884,7 @@ class d8_component( BMI_base.BMI_component ):
 
     #   update_flow_length_grid()
     #-------------------------------------------------------------------
-    def update_area_grid(self, SILENT=True, REPORT=False):
+    def update_area_grid(self, REPORT=False):
 
         #----------------------------------------------
         # (1/25/12) d8_global.py and d8_local.py each
@@ -974,7 +967,8 @@ class d8_component( BMI_base.BMI_component ):
         # open_new_gs_file() has a "dtype" keyword that defaults
         # to "float32".  Flow codes have dtype = "uint8".
         #-----------------------------------------------------------
-        model_output.check_netcdf()    # (test import and info message)
+        # (test import and info message)
+        model_output.check_netcdf( SILENT=self.SILENT )
         self.update_outfile_names()
 
         #--------------------------------------
@@ -1091,9 +1085,9 @@ class d8_component( BMI_base.BMI_component ):
 
     #   close_output_files()   
     #-------------------------------------------------------------------
-    def save_grids(self, SILENT=True, REPORT=False):
+    def save_grids(self, REPORT=False):  ### SILENT=True
 
-        if not(SILENT):
+        if not(self.SILENT):
             print('Saving D8 grids specified in CFG file...')
 
         #--------------------------------------------------------------

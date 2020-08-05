@@ -13,7 +13,7 @@
 #  >>> cProfile.run('topoflow.framework.tests.test_framework.topoflow_test()')  
 #      
 #-----------------------------------------------------------------------      
-## Copyright (c) 2012-2016, Scott D. Peckham
+## Copyright (c) 2012-2020, Scott D. Peckham
 ##
 ## Nov 2016.  Updated to use comp_names vs. port_names throughout.
 ##            EMELI doesn't link components by type, but couples
@@ -127,18 +127,16 @@
 #
 #-----------------------------------------------------------------------
 
+import os, sys, time
 import numpy as np
-import os
-# import sys
-import time
-# import traceback
-# import wx
 import xml.dom.minidom
 
 from topoflow.framework import time_interpolation    # (time_interpolator class)
 # from topoflow.framework import unit_conversion  # (unit_convertor class)
 # from topoflow.framework import grid_remapping
 
+# import traceback
+# import wx
 # import OrderedDict_backport  # (for Python 2.4 to 2.7)
 
 #--------------------------------------------------------------
@@ -153,8 +151,6 @@ from topoflow.framework import time_interpolation    # (time_interpolator class)
 #--------------------------------------------------------------
 # from cfunits import Units
 
-import sys    #### for testing
-
 #-----------------------------------------------------------------------
 # Embed some path info directly into EMELI.
 #--------------------------------------------
@@ -166,6 +162,9 @@ import sys    #### for testing
 ##################################################################
 
 #------------------------------------------------------
+# Once emeli has been imported, we can access
+# emeli.paths without creating an instance.
+#------------------------------------------------------
 # Get path to the current file (emeli.py).  (7/29/13)
 # At top need: "#! /usr/bin/env python" ??
 # See: https://docs.python.org/2/library/os.path.html
@@ -174,29 +173,14 @@ framework_dir = os.path.dirname( __file__ )
 parent_dir    = os.path.join( framework_dir, '..' )
 # parent_dir    = os.path.join( framework_dir, os.path.pardir )
 examples_dir  = os.path.join( parent_dir, 'examples' )
-#-------------------------------------------------------
+#-------------------------------------------------
 framework_dir = os.path.abspath( framework_dir )
 parent_dir    = os.path.abspath( parent_dir )
 examples_dir  = os.path.abspath( examples_dir )
-#-------------------------------------------------------
-#     framework_dir = os.path.realpath( framework_dir )
-#     parent_dir    = os.path.realpath( parent_dir )
-#     examples_dir  = os.path.realpath( examples_dir )
-#-------------------------------------------------------
+#-------------------------------------------------
 framework_dir = framework_dir + os.sep
 parent_dir    = parent_dir    + os.sep
 examples_dir  = examples_dir  + os.sep
-
-SILENT = False
-if not(SILENT):
-    # print ' '
-    print('Paths for this package:')
-    print('framework_dir = ' + framework_dir)
-    print('parent_dir    = ' + parent_dir)
-    print('examples_dir  = ' + examples_dir)
-    print('__file__      = ' + __file__)
-    print('__name__      = ' + __name__)
-    print(' ')
 
 #--------------------------------------
 # Save the full paths in a dictionary
@@ -206,13 +190,14 @@ paths['framework']        = framework_dir
 paths['examples']         = examples_dir
 paths['framework_parent'] = parent_dir
 
+#-----------------------------------------------------------------------
+
 ## This works fine.
 # from topoflow.framework.tests import rti_files   ## (works fine)
 
 ## This doesn't work because test_framework.py already imported emeli.py.
 # from topoflow.framework.tests import test_framework
 
-  
 #-----------------------------------------------------------------------
 class comp_data():
     
@@ -236,10 +221,10 @@ class comp_data():
         self.version        = version
         self.language       = language
         self.author         = author
-        #---------------------------------------       
+        #-------------------------------------       
         self.help_url       = help_url
         self.cfg_template   = cfg_template
-        #---------------------------------------
+        #-------------------------------------
         self.time_step_type = time_step_type
         self.time_units     = time_units
         self.grid_type      = grid_type
@@ -249,8 +234,7 @@ class comp_data():
         # This should be a Python list
         #-------------------------------
         self.uses_types     = uses_types
-
-        
+     
 #   comp_data (class)
 #-----------------------------------------------------------------------
 class framework():
@@ -270,50 +254,32 @@ class framework():
 #     # calls to get_package_paths().  This is a known Python issue
 #     # that has been discussed frequently online.  (9/17/14)
 #     ##################################################################
-# 
-#     #------------------------------------------------------
-#     # Get path to the current file (emeli.py).  (7/29/13)
-#     # At top need: "#! /usr/bin/env python" ??
-#     # See: https://docs.python.org/2/library/os.path.html
-#     #------------------------------------------------------
-#     framework_dir = os.path.dirname( __file__ )
-#     parent_dir    = os.path.join( framework_dir, '..' )
-#     # parent_dir    = os.path.join( framework_dir, os.path.pardir )
-#     examples_dir  = os.path.join( parent_dir, 'examples' )
-#     #-------------------------------------------------------
-#     framework_dir = os.path.abspath( framework_dir )
-#     parent_dir    = os.path.abspath( parent_dir )
-#     examples_dir  = os.path.abspath( examples_dir )
-#     #-------------------------------------------------------
-# #     framework_dir = os.path.realpath( framework_dir )
-# #     parent_dir    = os.path.realpath( parent_dir )
-# #     examples_dir  = os.path.realpath( examples_dir )
-#     #-------------------------------------------------------
-#     framework_dir = framework_dir + os.sep
-#     parent_dir    = parent_dir    + os.sep
-#     examples_dir  = examples_dir  + os.sep
-# 
-#     SILENT = False
-#     if not(SILENT):
-#         print ' '
-#         print 'Paths for this package:'
-#         print 'framework_dir =', framework_dir
-#         print 'parent_dir    =', parent_dir
-#         print 'examples_dir  =', examples_dir
-#         print '__file__      =', __file__
-#         print '__name__      =', __name__
-#         print ' '
-#     
-#     #--------------------------------------
-#     # Save the full paths in a dictionary
-#     #--------------------------------------
-#     paths = dict()
-#     paths['framework']        = framework_dir
-#     paths['examples']         = examples_dir
-#     paths['framework_parent'] = parent_dir
-        
+
     #-------------------------------------------------------------------
-    def read_repository( self, SILENT=True ):
+    def __init__( self, SILENT=True ):
+    
+        self.SILENT = SILENT
+        if not(self.SILENT):
+            # print ' '
+            print('Paths for this package:')
+            print('framework_dir = ' + framework_dir)
+            print('parent_dir    = ' + parent_dir)
+            print('examples_dir  = ' + examples_dir)
+            print('__file__      = ' + __file__)
+            print('__name__      = ' + __name__)
+            print()
+
+        #----------------------------------------
+        # Save the full paths in a dictionary
+        #----------------------------------------
+        # paths is already saved in the module,
+        # saving it here in the instance.
+        #----------------------------------------
+        self.paths = paths
+
+    #   __init__()       
+    #-------------------------------------------------------------------
+    def read_repository( self ):
 
         #---------------------------------------------------
         # Read a file that contains static information for
@@ -337,7 +303,8 @@ class framework():
         # "#! /usr/bin/env python" for this to work.
         #---------------------------------------------------------
         # framework_dir = self.paths['framework']
-        framework_dir = paths['framework']   # (paths was saved at top of file)
+        ## framework_dir = paths['framework']   # (paths was saved at top of file)
+        framework_dir = self.paths['framework']
         repo_dir  = framework_dir
         repo_file = 'component_repository.xml'
         comp_repo_file = repo_dir + repo_file
@@ -347,10 +314,10 @@ class framework():
         #----------------------------------------
         ########
     
-        if not(SILENT):
-            print('Reading info from comp_repo_file:')
+        if not(self.SILENT):
+            print('EMELI: Reading info from comp_repo_file:')
             print('    ' + comp_repo_file)
-            print(' ')
+            print()
         
         #-------------------------------------------
         # Read all component info from an XML file
@@ -370,7 +337,7 @@ class framework():
             print(' ERROR: Component repository XML file')
             print('        has no "component" tags.')
             print('########################################')
-            print(' ')
+            print()
             return
             
         #------------------------------------------------------
@@ -469,7 +436,7 @@ class framework():
 
     #   read_repository()
     #-------------------------------------------------------------------
-    def read_provider_file(self, SILENT=False):
+    def read_provider_file(self):
 
         #-----------------------------------------------------
         # Notes:  The "provider_file" specifies the specific
@@ -480,8 +447,8 @@ class framework():
         #         this new composite model.
         #-----------------------------------------------------
 
-        if not(SILENT):
-            print('Reading info from provider_file:')
+        if not(self.SILENT):
+            print('EMELI: Reading info from provider_file:')
             print('    ' + self.provider_file)
 
         self.provider_list = []
@@ -519,7 +486,7 @@ class framework():
             print('    ' + comp_name)
             print(' in the component repository.')
             print('#########################################')
-            print(' ')
+            print()
             return False
         else:
             return True
@@ -604,7 +571,7 @@ class framework():
 #         
 #     #   comp_set_complete()  
     #-------------------------------------------------------------------
-    def instantiate( self, comp_name, SILENT=True ):
+    def instantiate( self, comp_name ):
 
         #-------------------------------------------------------
         # Note: This version only allows one component of each
@@ -692,13 +659,13 @@ class framework():
         #----------------
         # Final message
         #----------------
-        if not(SILENT):
-            print('Instantiated component: ' + comp_name)
+        if not(self.SILENT):
+            print('EMELI: Instantiated component: ' + comp_name)
             ## print('        of comp_type: ' + comp_type)
 
     #   instantiate()
     #-------------------------------------------------------------------
-    def remove( self, comp_name, SILENT=True ):
+    def remove( self, comp_name ):
 
         #-----------------------------------------------------
         # Note: Remove a component from comp_set, perhaps to
@@ -730,7 +697,7 @@ class framework():
         #----------------
         # Final message
         #----------------
-        if not(SILENT):
+        if not(self.SILENT):
             print('Removed component:', comp_name)
             
     #   remove()
@@ -1016,21 +983,60 @@ class framework():
                 
     #   set_values_at_indices()
     #-------------------------------------------------------------------
-    def initialize( self, comp_name, cfg_file=None,
-                    mode='nondriver'):
+    def initialize( self, comp_name, cfg_file=None):
 
+        #--------------------------------------------------
+        # Note: This is called by:  initialize_comp_set()
+        #       SILENT keyword applies to all components.
+        #--------------------------------------------------
+        #       In every component, mode='nondriver' in
+        #       initialize.  EMELI sets mode='driver'
+        #       for the driver after instantiation.
+        #       So don't do anything with mode here.
+        #--------------------------------------------------
+        
         #------------------------------
         # Is comp_name in comp_list ?
         #------------------------------
 ##        if not(self.comp_name_valid( comp_name )):
 ##            return
-           
+
         bmi = self.comp_set[ comp_name ]
         if (cfg_file == None):
             cfg_file = self.get_cfg_filename( bmi )
-        bmi.initialize( cfg_file=cfg_file, mode=mode )
+        #-------------------------------------------
+        # driver_comp is identified in run_model()
+        # and message is printed there.
+        #-------------------------------------------
+        mode = 'nondriver'        
+        if (comp_name == self.driver_comp_name):
+            mode = 'driver'      
+        bmi.initialize( cfg_file=cfg_file, SILENT=self.SILENT,
+                        mode=mode )
             
     #   initialize()
+    #-------------------------------------------------------------------
+#     def initialize_LAST( self, comp_name, cfg_file=None,
+#                     mode='nondriver'):
+# 
+#         #--------------------------------------------------
+#         # Note: This is called by:  initialize_comp_set()
+#         #       SILENT keyword applies to all components.
+#         #--------------------------------------------------
+#         
+#         #------------------------------
+#         # Is comp_name in comp_list ?
+#         #------------------------------
+# ##        if not(self.comp_name_valid( comp_name )):
+# ##            return
+#            
+#         bmi = self.comp_set[ comp_name ]
+#         if (cfg_file == None):
+#             cfg_file = self.get_cfg_filename( bmi )
+#         bmi.initialize( cfg_file=cfg_file, mode=mode,
+#                         SILENT=self.SILENT )
+#             
+#     #   initialize()
     #-------------------------------------------------------------------
     def update( self, comp_name ):
 
@@ -1062,7 +1068,7 @@ class framework():
             print('ERROR: Model run aborted.')
             print('  Update failed on component: ' + comp_name + '.')
             print('================================================')
-            print(' ')
+            print()
             self.DONE = True
     
     #   update()
@@ -1092,7 +1098,7 @@ class framework():
 ##            return
 ##        
 ##        for comp_name in self.comp_set_list:
-##            self.instantiate( comp_name, SILENT=False )
+##            self.instantiate( comp_name )
 ##            
 ##    #   instantiate_all()
     #-------------------------------------------------------------------
@@ -1128,12 +1134,14 @@ class framework():
         #--------------------------------------------------
         if not(hasattr(self, 'provider_list')):
             print('Providers not yet read from provider_file.')
+            print()
             return
         
         for comp_name in self.provider_list:
             bmi = self.comp_set[ comp_name ]
             cfg_file = self.get_cfg_filename( bmi )
-            bmi.initialize( cfg_file=cfg_file, mode=mode )
+            bmi.initialize( cfg_file=cfg_file, mode=mode,
+                            SILENT=self.SILENT )
             
     #   initialize_all()
     #-------------------------------------------------------------------
@@ -1146,6 +1154,7 @@ class framework():
         #--------------------------------------------------
         if not(hasattr(self, 'provider_list')):
             print('Providers not yet read from provider_file.')
+            print()
             return
         
         for comp_name in self.provider_list:
@@ -1216,14 +1225,15 @@ class framework():
     #   finalize_all()
     #-------------------------------------------------------------------
     def run_model( self, driver_comp_name='topoflow_driver',
-                   ## driver_comp_name='hydro_model',
                    cfg_directory=None, cfg_prefix=None,
+                   SILENT=False,
                    time_interp_method='Linear'):
         ## (rename to run_comp_set ????)
         
         #-------------------
         # Default settings
         #-------------------
+        self.SILENT = SILENT
         DEBUG = True
         ## DEBUG = False
         if (cfg_prefix == None):
@@ -1241,6 +1251,7 @@ class framework():
         # cfg_directory = cfg_directory + os.sep     #########
         self.cfg_prefix    = cfg_prefix
         self.cfg_directory = cfg_directory
+        self.driver_comp_name = driver_comp_name
 
         #-----------------------------------------------------
         # Set self.comp_set_list and self.provider_list
@@ -1259,7 +1270,7 @@ class framework():
         # and doesn't have to be passed in. It is now the
         # directory that contains "framework.py" (11/4/13)
         #---------------------------------------------------
-        self.read_repository( SILENT=False )
+        self.read_repository()
         
         #------------------------------------
         # Get the component repository info
@@ -1278,7 +1289,7 @@ class framework():
         # one component of each "type" (comp_type).
         #--------------------------------------------    
         for comp_name in self.comp_set_list:
-            self.instantiate( comp_name, SILENT=False )
+            self.instantiate( comp_name )
         ### self.instantiate_all()   ### Later; change it first.
        
         #---------------------------------------------
@@ -1293,6 +1304,21 @@ class framework():
 ##        if not(OK):
 ##            return
 
+        #--------------------------------
+        # Identify the driver component
+        #--------------------------------       
+        driver = self.comp_set[ driver_comp_name ]
+        if not(self.SILENT):
+            print('Driver component name = ' + driver_comp_name)
+
+        #---------------------------------------------
+        # NOTE: If we set driver.mode here, it will
+        # get unset when initialize_comp_set() calls
+        # each component's initialize with defaults.
+        # See initialize().
+        #--------------------------------------------- 
+        # driver.mode = 'driver'
+        
         #------------------------------------------------------------
         # (2/18/13) Previous version of framework class initialized
         # and then connected the components in the comp_set using
@@ -1305,15 +1331,6 @@ class framework():
         OK = self.initialize_comp_set( REPORT=False )
         if not(OK):
             return
-        
-        #---------------------------------------
-        # Set mode of the driver component.
-        # Note: Must happen before next block.
-        #---------------------------------------
-        driver = self.comp_set[ driver_comp_name ]
-        driver.mode = 'driver'
-        print('Driver component name = ' + driver_comp_name)
-        print(' ')
         
         #-----------------------------------
         # Initialize all time-related vars
@@ -1332,7 +1349,7 @@ class framework():
         #------------------------------------------------------
         # This calls bmi.update(-1) on every comp in comp_set
         #------------------------------------------------------
-        time_interpolator.initialize()
+        time_interpolator.initialize( SILENT=self.SILENT )
         #---------------------------------------------------------
         # This is used by set_provided_vars() in run_model_old()
         # and by get_required_vars() in run_model().
@@ -1528,7 +1545,9 @@ class framework():
         ### dt_units = np.zeros( n_comps, dtype='|S30')   ###
         dt_units = np.zeros( n_comps, dtype='<U30')   # (2019-10-03)
         k = 0
-        print('Original component time step sizes =')
+        if not(self.SILENT):
+            print()
+            print('EMELI: Component time step sizes =')
         for comp_name in self.provider_list:    
             bmi      = self.comp_set[ comp_name ]
             dt       = bmi.get_time_step()
@@ -1537,11 +1556,14 @@ class framework():
             #---------------------------------------------------            
             DISABLED = (bmi.comp_status.lower() == 'disabled')
             if not(DISABLED):
-                print('    ' + comp_name + ' = ' + str(dt) + unit_str) 
+                if not(self.SILENT):
+                    str1 = str(dt) + unit_str
+                    print('    ' + comp_name + ' = ' +  str1 )
                 dt_array[ k ] = dt
                 dt_units[ k ] = units
             else:
-                print('    ' + comp_name + ' is Disabled.' )
+                if not(self.SILENT):
+                    print('    ' + comp_name + ' is Disabled.' )
                 #--------------------------------------------
                 # Set to large value so won't affect min dt
                 #--------------------------------------------
@@ -1552,7 +1574,8 @@ class framework():
         #-----------------------------------------
         # Convert all time step units to seconds
         #-----------------------------------------
-        print('Converting all time step units to seconds...')
+        if not(self.SILENT):
+            print('Converting all time step units to seconds...')
         for k in range( n_comps ):
             dt    = dt_array[ k ]
             units = dt_units[ k ]
@@ -1573,8 +1596,9 @@ class framework():
         dt_min = dt_array.min()
         self.dt = dt_min        # (framework timestep)
         dt_min_name = self.provider_list[ dt_array.argmin() ]
-        print('Component with smallest time step is: ' + dt_min_name)
-        print(' ')
+        if not(self.SILENT):
+            print('Component with smallest time step is: ' + dt_min_name)
+            print()
 
         #----------------------------------------------
         # This is not used with new method. (4/13/13)
@@ -1779,7 +1803,7 @@ class framework():
         # erode_test(), or try to run topoflow_test() twice, it will
         # fail with a path problem.  To avoid these problems, we now
         # (9/21/14):
-        # (1) Set CFG directory from CFG file in check_directories()
+        # (1) Set CFG directory from CFG file in set_directories()
         #     in BMI_base.py.
         # (2) Change an "in_directory" read from a CFG file as "." to
         #     the CFG directory from (1).
@@ -1793,18 +1817,18 @@ class framework():
         # Loop over providers in order of provider_list.
         # Note that the dictionary, self.comp_set, is
         # not ordered.  Order of initialize() matters.
-        #------------------------------------------------         
+        #------------------------------------------------      
         for provider_name in self.provider_list:
             bmi = self.comp_set[ provider_name ]
+
             #-------------------------------------------
             # Initialize the provider component to set
             # all of its variables, etc.
             #-------------------------------------------
             cfg_file = self.get_cfg_filename( bmi )
             self.initialize( provider_name, cfg_file )
-            print('Initialized component: ' + provider_name + '.')
-            ## print 'Initialized component of type: ' + provider_name + '.'
-            ## print 'Initialized: ' + comp_name + '.'
+            if not(self.SILENT):
+                print('EMELI: Initialized component: ' + provider_name + '.')
 
             ####################################################
             # (2/18/13) This connection step which creates the
@@ -2078,7 +2102,7 @@ class framework():
 #         # one component of each "type" (comp_type).
 #         #--------------------------------------------    
 #         for comp_name in self.comp_set_list:
-#             self.instantiate( comp_name, SILENT=False )
+#             self.instantiate( comp_name )
 #         ### self.instantiate_all()   ### Later; change it first.
 #        
 #         #---------------------------------------------

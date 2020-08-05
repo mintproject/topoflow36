@@ -1,46 +1,18 @@
 
-###### 
-###### channels_base.py called diversions.update() COMMENTED OUT !!!!!
-
-## Copyright (c) 2001-2014, Scott D. Peckham
-##
-## Jan 2013. Revised handling of input/output names.
-##
-## Oct 2012. CSDMS Standard Names and BMI.
-##
-## May 2012. Q_outlet -> Q_outlet[0]   (5/19/12)
-##
-## May 2010. Changes to initialize() and read_cfg_file()
-##
-## Feb 2010. Channels comp. now calls dp.update() itself.)
-##
-## April, May, July, August 2009
-##
-## Jan 2009. Converted from IDL.
-##
-
-###############################################################
-#  Note: We could have the channels component make most of
-#        the process update() calls.  This may clean up the
-#        appearance in the CMT.
-
-#  NB! T Some of the  "print_*" functions are not ready yet.
-
-#      In CCA mode, all update() method calls require the
-#      "time_sec" argument.
-###############################################################
-
+# NB!   update_diversion() in channels_base.py is now COMMENTED OUT.
+#
 #--------------------------------------------------------------------
-#  Notes:  This is an object-oriented, Python version of the
-#          TopoFlow spatial, hydrologic model, originally developed
-#          in IDL.  Every process component now has a Basic Model
-#          Interface (BMI) and uses CSDMS Standard Names.
-#--------------------------------------------------------------------
-
-#--------------------------------------------------------------------
-#  Notes:  Later go through code line-by-line to find places where
-#          numpy calculations (e.g. where) could be done more
-#          efficiently.
+# Copyright (c) 2001-2020, Scott D. Peckham
+#
+# May 2020. Wrote "vol_str()" for print_final_report()          
+# Jan 2013. Revised handling of input/output names.
+# Oct 2012. CSDMS Standard Names and BMI.
+# May 2012. Q_outlet -> Q_outlet[0]   (5/19/12)
+# May 2010. Changes to initialize() and read_cfg_file()
+# Feb 2010. Channels comp. now calls dp.update() itself.)
+# Apr, May, July, August 2009
+# Jan 2009. Converted from IDL.
+#
 #--------------------------------------------------------------------
 #
 #  class topoflow_driver      (inherits from BMI_base.py)
@@ -70,12 +42,13 @@
 #      update_mass_totals()           # (OBSOLETE ??)
 #      update_hydrograph_plot()
 #      -----------------------------------
+#      vol_str()
 #      print_final_report()
 #      print_mins_and_maxes()
 #      print_uniform_precip_data()
 #      print_dimless_number_data()
 #      print_mass_balance_report()
-
+#
 #-----------------------------------------------------------------------
 
 import numpy as np
@@ -85,11 +58,7 @@ import time
 from topoflow.utils import BMI_base
 from topoflow.utils import cfg_files as cfg
 
-from topoflow.utils.tf_utils import TF_Print, TF_String, TF_Version
-from topoflow.utils import tf_utils   # (must come after the "from" line ???)
-
-## from tf_utils import TF_Print, TF_String
-## import tf_utils  # (must come after the "from" line ???)
+from topoflow.utils.tf_utils import TF_String, TF_Version
 
 #-----------------------------------------------------------------------
 class topoflow_driver( BMI_base.BMI_component ):
@@ -158,11 +127,15 @@ class topoflow_driver( BMI_base.BMI_component ):
         'land_surface_water__domain_time_integral_of_evaporation_volume_flux',   # vol_ET@evap
         'land_surface_water__domain_time_integral_of_runoff_volume_flux',        # vol_R@channels
         'land_surface_water__runoff_volume_flux',                                # R@channels
-        'snowpack__domain_time_integral_of_melt_volume_flux',                    # vol_SM
+        'snowpack__domain_time_integral_of_liquid-equivalent_depth',             # vol_swe@snow
+        'snowpack__domain_time_integral_of_melt_volume_flux',                    # vol_SM@snow
         'soil_surface_water__domain_time_integral_of_infiltration_volume_flux',  # vol_IN@infil
+        'soil_water__domain_time_integral_of_volume_fraction',                   # vol_soil    
         'soil_water_sat-zone_top__domain_time_integral_of_recharge_volume_flux', # vol_Rg
-        #-----------------------------------------------------------   
-        'network_channel_water__volume',                                         # vol_chan@channels
+        #-----------------------------------------------------------
+        'channel_water_x-section__boundary_time_integral_of_volume_flow_rate',   # vol_edge@channels
+        'river-network_channel_water__initial_volume',                           # vol_chan0
+        'river-network_channel_water__volume',                                   # vol_chan@channels
         'land_surface_water__area_integral_of_depth' ]                           # vol_land@channels
         
         #----------------------------------------------------------------
@@ -229,14 +202,18 @@ class topoflow_driver( BMI_base.BMI_component ):
         'land_surface_water__domain_time_integral_of_evaporation_volume_flux':   'vol_ET',
         'land_surface_water__domain_time_integral_of_runoff_volume_flux':        'vol_R',
         'land_surface_water__runoff_volume_flux':                                'R',        
+        'snowpack__domain_time_integral_of_liquid-equivalent_depth':             'vol_swe',
         'snowpack__domain_time_integral_of_melt_volume_flux':                    'vol_SM',       
-        'soil_surface_water__domain_time_integral_of_infiltration_volume_flux':  'vol_v0',
+        'soil_surface_water__domain_time_integral_of_infiltration_volume_flux':  'vol_IN',
+        'soil_water__domain_time_integral_of_volume_fraction':                   'vol_soil',    
         'soil_water_sat-zone_top__domain_time_integral_of_recharge_volume_flux': 'vol_Rg',
         #---------------------
         'model__time_step':                                      'dt',
-        #----------------------------------------------------------------------------   
-        'network_channel_water__volume':                         'vol_chan',
-        'land_surface_water__area_integral_of_depth':            'vol_land' }       
+        #----------------------------------------------------------------------------
+        'channel_water_x-section__boundary_time_integral_of_volume_flow_rate': 'vol_edge',   
+        'river-network_channel_water__initial_volume' : 'vol_chan0',
+        'river-network_channel_water__volume':          'vol_chan',
+        'land_surface_water__area_integral_of_depth':   'vol_land' }       
 
             
     _var_units_map = {
@@ -277,14 +254,18 @@ class topoflow_driver( BMI_base.BMI_component ):
         'land_surface_water__domain_time_integral_of_runoff_volume_flux':          'm3',
         'land_surface_water__runoff_volume_flux':                                  'm s-1',
         'network_channel_water__volume':                                           'm3',
+        'snowpack__domain_time_integral_of_liquid-equivalent_depth':               'm3',
         'snowpack__domain_time_integral_of_melt_volume_flux':                      'm3',        
         'soil_surface_water__domain_time_integral_of_infiltration_volume_flux':    'm3',
+        'soil_water__domain_time_integral_of_volume_fraction':                     'm3',
         'soil_water_sat-zone_top__domain_time_integral_of_recharge_volume_flux':   'm3',
         #----------------------------
         'model__time_step': 's',
-        #----------------------------------------------------------------------------   
-        'network_channel_water__volume':                         'm3',
-        'land_surface_water__area_integral_of_depth':            'm3'   }  
+        #----------------------------------------------------------------------------
+        'channel_water_x-section__boundary_time_integral_of_volume_flow_rate': 'm3',  
+        'river-network_channel_water__initial_volume' : 'm3',
+        'river-network_channel_water__volume':          'm3',
+        'land_surface_water__area_integral_of_depth':   'm3'  }  
     
     #------------------------------------------------    
     # Return NumPy string arrays vs. Python lists ?
@@ -339,115 +320,6 @@ class topoflow_driver( BMI_base.BMI_component ):
    
     #   get_var_units()
     #-------------------------------------------------------------------
-##    def get_var_type(self, long_var_name):
-##
-##        #---------------------------------------
-##        # So far, all vars have type "double",
-##        # but use the one in BMI_base instead.
-##        #---------------------------------------
-##        return 'float64'
-##    
-##    #   get_var_type()
-
-    #-------------------------------------------------------------------
-##    def get_output_var_names(self):
-##
-##        names = ['hydro_model_time_step_size' ]   # dt   
-##        
-##        return names
-####      return np.array( names )    # (string array vs. list)
-##    
-##    #   get_output_var_names()
-    #-------------------------------------------------------------------
-##    def get_var_name(self, long_var_name):
-##
-##        #-------------------------------------------------
-##        # Define this map just once in "__init__()"  ??
-##        #-------------------------------------------------
-##        name_map = {
-##            'basin_cumulative_discharged_water_volume':'vol_Q',
-##            'basin_cumulative_evaporated_water_volume':'vol_ET',
-##            'basin_cumulative_ice_meltwater_volume':'vol_MR',
-##            'basin_cumulative_infiltrated_water_volume':'vol_v0',
-##            'basin_cumulative_lwe_precipitated_water_volume':'vol_P',
-##            'basin_cumulative_runoff_water_volume':'vol_R',
-##            'basin_cumulative_saturated_zone_infiltrated_water_volume':'vol_Rg',
-##            'basin_cumulative_snow_meltwater_volume':'vol_SM',
-##            'basin_cumulative_subsurface_to_surface_seeped_water_volume':'vol_GW',
-##            'basin_outlet_water_discharge':'Q_outlet',
-##            'basin_outlet_water_mean_depth':'d_outlet',   ####           
-##            'basin_outlet_water_mean_speed':'u_outlet',   ####
-##            'channel_bed_max_manning_roughness_parameter':'nval_max',
-##            'channel_bed_max_roughness_length':'z0val_max',
-##            'channel_bed_min_manning_roughness_parameter':'nval_min',
-##            'channel_bed_min_roughness_length':'z0val_min',
-##            'channel_outgoing_peak_water_discharge':'Q_peak',
-##            'channel_outgoing_peak_water_discharge_time':'T_peak',
-##            'channel_time_step_size':'channel_dt',                     ####### Need "_" vs. ".".
-##            'channel_water_peak_mean_depth':'d_peak',
-##            'channel_water_peak_mean_depth_time':'Td_peak',
-##            'channel_water_peak_mean_speed':'u_peak',
-##            'channel_water_peak_mean_speed_time':'Tu_peak',
-##            'diversion_time_step_size':'diversion_dt',
-##            'evap_time_step_size':'evap_dt',      ####         
-##        'hydro_model_time_step_size':'dt',
-##            'ice_time_step_size':'ice_dt',        ####
-##            'infil_time_step_size':'infil_dt',    ####         
-##            'lwe_max_precipitation_rate':'P_max',
-##            'meteorology_time_step_size':'meteorology_dt',   ####
-##            'satzone_time_step_size':'satzone_dt',           ####
-##            'snow_time_step_size':'snow_dt' }                ####
-##            
-##        return name_map[ long_var_name ]
-##
-##    #   get_var_name()
-##    #-------------------------------------------------------------------
-##    def get_var_units(self, long_var_name):
-##
-##        #-------------------------------------------------
-##        # Define this map just once in "__init__()"  ??
-##        #-------------------------------------------------
-##        units_map = {
-##            'vol_ET'         : 'm3',
-##            'vol_MR'         : 'm3',
-##            'vol_v0'         : 'm3',
-##            'vol_P'          : 'm3',
-##            'vol_R'          : 'm3',
-##            'vol_Rg'         : 'm3',
-##            'vol_SM'         : 'm3',
-##            'vol_GW'         : 'm3',
-##            'Q_outlet'       : 'm3 s-1',
-##            'd_outlet'       : 'm',
-##            'u_outlet'       : 'm s-1',
-##            'nval_max'       : 's m-1/3',   ##### CHECK
-##            'z0val_max'      : 'm',
-##            'nval_max'       : 's m-1/3',
-##            'nval_min'       : 's m-1/3',
-##            'z0val_min'      : 'm',
-##            'Q_peak'         : 'm3 s-1',
-##            'T_peak'         : 'min',
-##            'd_peak'         : 'm',
-##            'Td_peak'        : 'min',
-##            'u_peak'         : 'm s-1',
-##            'Tu_peak'        : 'min',
-##            # 'z0val'     : 'm',
-##            'P_max'          : 'm s-1',
-##            'dt'             : 's',
-##            'channel_dt'     : 's',
-##            'diversion_dt'   : 's',
-##            'evap_dt'        : 's',
-##            'ice_dt'         : 's',
-##            'infil_dt'       : 's',
-##            'satzone_dt'     : 's',
-##            'snow_dt'        : 's',
-##            'meteorology_dt' : 's' }
-##            
-##        var_name = self.get_var_name( long_var_name )
-##        
-##        return units_map[ var_name ]
-##    
-##    #   get_var_units()
-    #-------------------------------------------------------------------
     def set_constants(self):
 
         #------------------------
@@ -475,7 +347,9 @@ class topoflow_driver( BMI_base.BMI_component ):
         #        "initialize()" method in the component's CCA
         #        Impl file.
         #------------------------------------------------------
-        if not(SILENT):
+        self.SILENT = SILENT
+        if not(self.SILENT):
+            print()
             print('TopoFlow component: Initializing...')
         
         self.status     = 'initializing'  # (OpenMI 2.0 convention)
@@ -494,7 +368,7 @@ class topoflow_driver( BMI_base.BMI_component ):
         # Has component been turned off ?
         #----------------------------------
         if (self.comp_status == 'Disabled'):
-            if not(SILENT):
+            if not(self.SILENT):
                 print('TopoFlow Main component: Disabled in CFG file.')
             self.DONE = True
             self.status = 'initialized.'  # (OpenMI 2.0 convention)
@@ -509,32 +383,26 @@ class topoflow_driver( BMI_base.BMI_component ):
         #-----------------------
         self.initialize_time_vars()  # (uses cp.dt from above)
         self.initialize_stop_vars()   #### (do this with CFG file ?)
-                          
-        #### self.nz = self.ip.get_scalar_long('nz')   #######
-
-        #------------------------------------
-        # Check if output options are valid
-        #------------------------------------
-##        outlet_IDs, n_outlets, outlet_ID, OK = \
-##            Check_Output_Options(grid_vars, rv, cv, sv, ev, iv, gv, nx, ny)
-      
+    
         #---------------------
         # Open the logfile ?      *** (Append or overwrite ??)
         #---------------------
         if (self.WRITE_LOG):
             if (self.log_file == None):
                 self.log_file = (self.case_prefix + '_LOG.txt')
-            print('Opening log file:')
-            print('    log_file = ' + self.log_file)
             self.log_unit = open(self.log_file, 'w')
+            
+            if not(self.SILENT):
+                print('Opening log file:')
+                print('    log_file = ' + self.log_file)
 
         #----------------------
         # Print start message
         #----------------------
-        TF_Print(' ')
-        TF_Print('Starting TopoFlow model run...')
-        hline = ''.ljust(60, '-')
-        TF_Print(hline)
+        if not(self.SILENT):
+            print('Starting TopoFlow model run...')
+            ## hline = ''.ljust(60, '-')
+            ## print(hline)
         self.status = 'initialized'
         
     #   initialize()        
@@ -566,8 +434,7 @@ class topoflow_driver( BMI_base.BMI_component ):
         
         self.status = 'updating'
         OK = True
-        ## if (self.VERBOSE):
-        if (self.mode == 'driver'):
+        if (self.mode == 'driver') and not(self.SILENT):
             self.print_time_and_value(self.Q_outlet, 'Q_out', '[m^3/s]',
                                       interval=0.5)  # [seconds]
             
@@ -599,15 +466,17 @@ class topoflow_driver( BMI_base.BMI_component ):
         # if (self.mode == 'driver'):
         #     self.print_time_and_value(self.Q_outlet, 'Q_out', '[m^3/s]')
  
-        print('=======================')
-        print('Simulation complete.')
-        print('=======================')
-        print(' ')
+        if not(self.SILENT):
+            print('=======================')
+            print('Simulation complete.')
+            print('=======================')
+            print()
         
         #----------------
         # Print reports
         #----------------
-        self.print_final_report()
+        if not(self.SILENT):
+            self.print_final_report()
 ##        self.print_mins_and_maxes( FINAL=True )   # (Moved into final report.)
 ##        self.print_uniform_precip_data()  # (not ready yet)
 ##        self.print_mass_balance_report()  # (not ready yet)
@@ -622,8 +491,9 @@ class topoflow_driver( BMI_base.BMI_component ):
         #----------------------
         # Print final message
         #----------------------
-        TF_Print('Finished.' + '  (' + self.case_prefix + ')')
-        TF_Print(' ')
+        if not(self.SILENT):
+            print('Finished.' + '  (' + self.case_prefix + ')')
+            print()
         self.status = 'finalized'
    
     #   finalize()
@@ -662,7 +532,7 @@ class topoflow_driver( BMI_base.BMI_component ):
                 self.DONE = (self.Q_outlet <= Q_stop) and \
                             (self.Q_outlet > 0)
 
-            if (self.DONE):
+            if (self.DONE and not(self.SILENT)):
                 stop_str = str(self.Qp_fraction) + '.\n'
                 print('Stopping: Reached Q_peak fraction = ' + stop_str)
                 
@@ -688,7 +558,7 @@ class topoflow_driver( BMI_base.BMI_component ):
             # Run until specified "stopping time", in minutes
             #--------------------------------------------------
             self.DONE = (self.time_min >= self.T_stop)  # [minutes]
-            if (self.DONE):
+            if (self.DONE and not(self.SILENT)):
                 stop_str = str(self.T_stop) + '.\n'
                 print('Stopping: Reached stop time = ' + stop_str)
         elif (self.stop_method == 'Until_n_steps'):
@@ -696,7 +566,7 @@ class topoflow_driver( BMI_base.BMI_component ):
             # Run for a specified number of steps
             #--------------------------------------
             self.DONE = (self.time_index >= self.n_steps)
-            if (self.DONE):
+            if (self.DONE and not(self.SILENT)):
                 stop_str = str(self.n_steps) + '.\n'
                 print('Stopping: Reached number of steps = ' + stop_str)
         else:
@@ -771,10 +641,10 @@ class topoflow_driver( BMI_base.BMI_component ):
             ## if not(DONE):    
             ##     n_same = int32(0)
             ##
-            #TF_Print,'****************************************************'
-            #TF_Print,'Aborting model run: '
-            #TF_Print,'Discharge, Q, has reached steady-state.'
-            #TF_Print,'****************************************************'
+            #print('****************************************************')
+            #print('Aborting model run: ')
+            #print('Discharge, Q, has reached steady-state.')
+            #print('****************************************************')
             #msg = [ $
             #'WARNING:  Route_Flow aborted.', ' ',$
             #'Discharge, Q, has reached steady-state. ', ' ']
@@ -795,11 +665,11 @@ class topoflow_driver( BMI_base.BMI_component ):
         #    'ERROR: ', ' ', $
         #    'Discharge at outlet is zero for all times. ', ' ',$
         #    'Is there a runoff-producing process ? ', ' ']
-        #    TF_Print,'*************************************************'
-        #    TF_Print, msg[1]
-        #    TF_Print, msg[3]
-        #    TF_Print,'*************************************************'
-        #    TF_Print,' '
+        #    print('*************************************************')
+        #    print( msg[1] )
+        #    print( msg[3] )
+        #    print('*************************************************')
+        #    print()
         #    GUI_Error_Message, msg
         #    DONE = 1b
         #endif
@@ -834,10 +704,11 @@ class topoflow_driver( BMI_base.BMI_component ):
             
             if not(OK):
                 self.finalize()
-                TF_Print(' ')
-                TF_Print('----------------------------------')
-                TF_Print(' Simulation terminated by user.')
-                TF_Print('----------------------------------')
+                ## if not(self.SILENT)):
+                print()
+                print('----------------------------------')
+                print(' Simulation terminated by user.')
+                print('----------------------------------')
                 return
 
             self.last_check_time = time.time()
@@ -876,7 +747,8 @@ class topoflow_driver( BMI_base.BMI_component ):
     #-------------------------------------------------------------
     def initialize_stop_vars(self):
 
-        TF_Print('Setting stop method to: ' + self.stop_method)
+        if not(self.SILENT):
+            print('Setting stop method to: ' + self.stop_method)
 
         #---------------------------------------------------------
         # Define some constants for "check_steady_state() method
@@ -1020,6 +892,16 @@ class topoflow_driver( BMI_base.BMI_component ):
 
     #   update_hydrograph_plot()
     #-------------------------------------------------------------
+    def vol_str( self, value ):
+    
+        if (np.abs(value) < 1e6):
+            return (str(value) + ' [m^3]')
+        else:
+            new_val = (value / 1e6)
+            return (str(new_val) + ' x 10^6 [m^3]')
+
+    #   vol_str()
+    #-------------------------------------------------------------
     def print_final_report(self, comp_name='TopoFlow',
                            mode='nondriver'):
 
@@ -1051,36 +933,42 @@ class topoflow_driver( BMI_base.BMI_component ):
         Tu_peak    = self.Tu_peak
         d_peak     = self.d_peak
         Td_peak    = self.Td_peak
-        #-----------------------------
+        #--------------------------
         P_max      = self.P_max
-
-        vol_P  = self.vol_P
-        vol_Q  = self.vol_Q 
-        vol_SM = self.vol_SM
-        vol_MR = self.vol_MR
-        vol_ET = self.vol_ET
-        vol_IN = self.vol_v0    ####
-        vol_Rg = self.vol_Rg
-        vol_GW = self.vol_GW
-        vol_R  = self.vol_R
-        vol_chan = self.vol_chan    # (2019-09-17)
-        vol_land = self.vol_land    # (2019-09-17)
-        
-        #-----------------------------------------------------------------
-        # (2/6/13) BMI_base.py has an "initialize_basin_vars()" method
-        # that embeds an instance of the "basin" component in the caller
-        # as "bp".  So this block of code should still work.
-        #-----------------------------------------------------------------
+        #--------------------------
+        vol_P   = self.vol_P
+        vol_Q   = self.vol_Q 
+        vol_SM  = self.vol_SM
+        vol_MR  = self.vol_MR
+        vol_ET  = self.vol_ET
+        vol_IN  = self.vol_IN
+        vol_Rg  = self.vol_Rg
+        vol_GW  = self.vol_GW
+        vol_R   = self.vol_R
+        #--------------------------
+        # vol_soil0 = self.vol_soil0   # (2020-05-08)
+        vol_soil0 = 0.0  ##### placeholder        
+        vol_soil  = self.vol_soil    # (2020-05-08)
+        vol_chan0 = self.vol_chan0   # (2020-06-15)
+        vol_chan  = self.vol_chan    # (2019-09-17)
+        vol_land  = self.vol_land    # (2019-09-17)
+        # vol_swe0  = self.vol_swe0    # (2020-05-05)
+        vol_swe0  = 0.0  ##### placeholder
+        vol_swe   = self.vol_swe       # (2020-05-05)
+        vol_edge  = self.vol_edge    # (2020-06-15)
+        #-----------------------------        
         basin_area = self.basin_area
-        ##################################################################
-        # We need an "update_basin_vars()" method to be called from each
-        # component's update() method in order to compute "volume_in".
-        # Then we can set TRACK_VOLUME to True.
-        ##################################################################
-        ## volume_in  = self.bp.volume_in
-        TRACK_VOLUME = False    ##### (since not ready yet) ######
-        volume_in    = self.initialize_scalar( 0, dtype='float64')
 
+        ##################################################################
+#         TRACK_VOLUME = False    ##### (since not ready yet) ######
+#         volume_in    = self.initialize_scalar( 0, dtype='float64')
+#         if (TRACK_VOLUME):  
+#             if (volume_in != 0):    
+#                 percent_out = np.float64(100) * vol_Q / volume_in
+#             else:    
+#                 percent_out = np.float64(0)
+
+          
         #----------------------------
         # Construct run time string
         #----------------------------
@@ -1091,13 +979,7 @@ class topoflow_driver( BMI_base.BMI_component ):
         else:
             rt_units = ' [sec]'
         run_time_str = str(run_time) + rt_units
-        
-        if (TRACK_VOLUME):  
-            if (volume_in != 0):    
-                percent_out = np.float64(100) * vol_Q / volume_in
-            else:    
-                percent_out = np.float64(0)
-  
+
         #-----------------------------------------------      
         # Prepare to save report as a list of strings
         #-----------------------------------------------
@@ -1129,26 +1011,6 @@ class topoflow_driver( BMI_base.BMI_component ):
         report.append('Number of rows:      ' + str(self.ny) )
         report.append(' ')
 
-        #------------------------------------------------------------
-        # (2/6/13) With the new framework and use of CSDMS Standard
-        # Names there is no simple way for the TopoFlow driver to
-        # get the time steps from the other components.  That is,
-        # it can request "model__time_step" from the framework, but
-        # cannot specify which component(s) that it wants it from.
-        # The framework has no trouble getting and printing this
-        # info however, and this is now done instead.  But current
-        # approach does not write time steps to the log_file.
-        #------------------------------------------------------------
-##        TF_Print('Channel timestep:    ' + str(cp_dt) + ' [s]')
-##        TF_Print('Precip/met timestep: ' + str(mp_dt) + ' [s]')
-##        TF_Print('Snowmelt timestep:   ' + str(sp_dt) + ' [s]')
-##        TF_Print('ET timestep:         ' + str(ep_dt) + ' [s]')
-##        TF_Print('Infiltr. timestep:   ' + str(ip_dt) + ' [s]')
-##        TF_Print('Sat. zone timestep:  ' + str(gp_dt) + ' [s]')
-##        TF_Print('Icemelt timestep:    ' + str(iip_dt) + ' [s]')        
-        # TF_Print('Overland timestep:   ' + str(op_dt) + ' [s]')
-        # TF_Print('Sampled timestep:    ' + str(sample_dt) + ' [s]')
-
         if (self.stop_method == 'Until_model_time'):    
             report.append('T_stop:            ' + str(T_stop) + ' [min]')
             report.append(' ')
@@ -1178,12 +1040,12 @@ class topoflow_driver( BMI_base.BMI_component ):
         report.append(' ')
         
         ##############################################################################
-        if (TRACK_VOLUME):    
-            report.append('Total volume out:  ' + str(vol_Q) + ' [m^3]')
-            if (basin_area != 0):    
-                report.append('Rain volume in:    ' + str(volume_in)   + ' [m^3]')
-                report.append('Percentage out:    ' + str(percent_out) + ' [%]')
-                report.append(' ')
+#         if (TRACK_VOLUME):    
+#             report.append('Total volume out:  ' + str(vol_Q) + ' [m^3]')
+#             if (basin_area != 0):    
+#                 report.append('Rain volume in:    ' + str(volume_in)   + ' [m^3]')
+#                 report.append('Percentage out:    ' + str(percent_out) + ' [%]')
+#                 report.append(' ')
         ##############################################################################
                 
         #--------------------------------
@@ -1196,18 +1058,50 @@ class topoflow_driver( BMI_base.BMI_component ):
         #--------------------------------------------
         # Print the area_time integrals over domain
         #--------------------------------------------
-        report.append('Total accumulated volumes over entire DEM:')
-        report.append('vol_P    (rainfall):      ' + str(vol_P)  + ' [m^3]   (snowfall excluded)')
-        report.append('vol_Q    (discharge):     ' + str(vol_Q)  + ' [m^3]   (main basin outlet)')
-        report.append('vol_SM   (snowmelt):      ' + str(vol_SM) + ' [m^3]')
-        report.append('vol_MR   (icemelt):       ' + str(vol_MR) + ' [m^3]')
-        report.append('vol_ET   (evaporation):   ' + str(vol_ET) + ' [m^3]')
-        report.append('vol_IN   (infiltration):  ' + str(vol_IN) + ' [m^3]')
-        report.append('vol_Rg   (recharge):      ' + str(vol_Rg) + ' [m^3]   (to water table)')
-        report.append('vol_GW   (baseflow):      ' + str(vol_GW) + ' [m^3]')
-        report.append('vol_R    (runoff):        ' + str(vol_R)  + ' [m^3]   R = (P+SM+MR) - (ET+IN)')
-        report.append('vol_chan (channels):      ' + str(vol_chan) + ' [m^3]')
-        report.append('vol_land (surface):       ' + str(vol_land) + ' [m^3]')
+        report.append('Total accumulated volumes over entire DEM: (fluxes)')
+        report.append('vol_P    (precip):        ' + self.vol_str(vol_P) + '   (incl. leq snowfall)')
+        report.append('vol_Q    (discharge):     ' + self.vol_str(vol_Q) + '   (main basin outlet)')
+        report.append('vol_SM   (snowmelt):      ' + self.vol_str(vol_SM))
+        report.append('vol_MR   (icemelt):       ' + self.vol_str(vol_MR))
+        report.append('vol_ET   (evaporation):   ' + self.vol_str(vol_ET))
+        report.append('vol_IN   (infiltration):  ' + self.vol_str(vol_IN))
+        report.append('vol_Rg   (recharge):      ' + self.vol_str(vol_Rg) + '   (bottom loss)')
+        report.append('vol_GW   (baseflow):      ' + self.vol_str(vol_GW))
+        report.append('vol_R    (runoff):        ' + self.vol_str(vol_R)  + '  R = (P+SM+MR) - (ET+IN)')
+        report.append(' ')
+
+        #---------------------------------
+        # Print various forms of storage
+        #---------------------------------
+        report.append('Total accumulated volumes over entire DEM: (storage)')
+        report.append('vol_soil  (infiltration):  ' + self.vol_str(vol_soil) + '  (change in storage)') 
+        report.append('vol_chan0 (channels):      ' + self.vol_str(vol_chan0) + '  (initial)')
+        report.append('vol_chan  (channels):      ' + self.vol_str(vol_chan))
+        report.append('vol_land  (surface):       ' + self.vol_str(vol_land))
+        report.append('vol_edge  (boundary):      ' + self.vol_str(vol_edge))
+        report.append('vol_swe   (snowpack):      ' + self.vol_str(vol_swe))
+        report.append(' ')
+
+        #---------------------------------------------
+        # Print mass balance check (over entire DEM)
+        #---------------------------------------------
+        vol_in      = (vol_P + vol_SM + vol_MR + vol_GW)
+        vol_out     = (vol_IN + vol_ET + vol_edge)
+        vol_stored  = (vol_chan - vol_chan0)  # change in storage
+        vol_stored += (vol_soil - vol_soil0)
+        vol_stored += (vol_swe  - vol_swe0)
+        vol_stored += vol_land   # (due to flood water depth)
+        vol_error   = (vol_out + vol_stored) - vol_in
+        report.append('Mass balance check:')
+        report.append('volume in         = ' + self.vol_str(vol_in) )
+        report.append('volume out        = ' + self.vol_str(vol_out) )
+        report.append('change in storage = ' + self.vol_str(vol_stored) )
+        if (vol_error > 0):
+            msg_prefix = 'volume gain error = '
+        else:
+            msg_prefix = 'volume loss error = '
+        report.append(msg_prefix + self.vol_str(vol_error) )
+        report.append('vol_error/ vol_in = ' + str(vol_error / vol_in) )
         report.append(' ')
 
         #----------------------------------        
@@ -1324,10 +1218,10 @@ class topoflow_driver( BMI_base.BMI_component ):
         #-------------------------------------
         # This is too verbose in most cases?
         #------------------------------------- 
-        #TF_Print,'Uniform precip. rate information: '
-        #TF_Print,'Precip. rate:     ' + rstr + ' [mm/hr]'
-        #TF_Print,'Duration:         ' + dstr + ' [min]'
-        #TF_Print,' '
+        # print('Uniform precip. rate information: ')
+        # print('Precip. rate:     ' + rstr + ' [mm/hr]' )
+        # print('Duration:         ' + dstr + ' [min]' )
+        # print()
         
         #----------------------
         # Write to log file ?
@@ -1379,14 +1273,15 @@ class topoflow_driver( BMI_base.BMI_component ):
         Q_peak_pred = (np.float64(0.2) * rates[0] * (basin_length) ** np.float64(2) / np.float64(3))
         T_peak_pred = (np.float64(3) * durations[0])
         
-        TF_Print('Dimensionless number information:\n')
-        TF_Print('T_peak /Duration: ' + tpstr + "\n")
-        TF_Print('T_final/Duration: ' + tfstr + "\n") 
-        vTF_Print('Psi=L/(R*TD):     ' + str(PSI) + ' [unitless]\n')
-        TF_Print(' ')
-        TF_Print('Q_peak predicted: ' + str(Q_peak_pred) + ' [m^3/s]\n')
-        TF_Print('T_peak predicted: ' + str(T_peak_pred) + ' (min]\n')
-        TF_Print(' ')
+        if not(self.SILENT):
+            print('Dimensionless number information:\n')
+            print('T_peak /Duration: ' + tpstr + "\n")
+            print('T_final/Duration: ' + tfstr + "\n") 
+            print('Psi=L/(R*TD):     ' + str(PSI) + ' [unitless]\n')
+            print()
+            print('Q_peak predicted: ' + str(Q_peak_pred) + ' [m^3/s]\n')
+            print('T_peak predicted: ' + str(T_peak_pred) + ' (min]\n')
+            print()
         
         #----------------------
         # Write to log file ?
@@ -1404,83 +1299,9 @@ class topoflow_driver( BMI_base.BMI_component ):
                   
     #   print_dimless_number_data()
     #-------------------------------------------------------------
-    def print_mass_balance_report(self):            
-
-        #--------------------------------------
-        # Updated for new framework. (2/5/13)
-        #--------------------------------------
-        vol_P  = self.vol_P
-        vol_SM = self.vol_SM
-        vol_IN = self.vol_v0
-        vol_Rg = self.vol_Rg
-        vol_ET = self.vol_ET
-        vol_GW = self.vol_GW
-        vol_R  = self.vol_R
-        vol_chan = self.vol_chan    # (2019-09-17)
-        
-        TF_Print('Volume rain         = ' + str(vol_P)  + ' [m^3]')
-        TF_Print('Volume snowmelt     = ' + str(vol_SM) + ' [m^3]')
-        TF_Print('Volume infiltrated  = ' + str(vol_IN) + ' [m^3]')
-        TF_Print('Volume evaporated   = ' + str(vol_ET) + ' [m^3]')
-        TF_Print('Volume seepage      = ' + str(vol_GW) + ' [m^3]')
-        TF_Print('Volume runoff       = ' + str(vol_R)  + ' [m^3]')
-        TF_Print('Volume bottom loss  = ' + str(vol_Rg) + ' [m^3]')
-        TF_Print('Volume all channels = ' + str(vol_chan) + ' [m^3]')
-        TF_Print(' ')
-
-        RICHARDS = self.ip.get_scalar_long('RICHARDS')
-        print('In topoflow.print_mass_balance_report(),')
-        print('   RICHARDS =', RICHARDS)
-        print(' ')
-        if (RICHARDS):    
-            #----------------------------------------
-            # Richards' equation for infiltration
-            # Ground water losses not counted above
-            #----------------------------------------
-            da         = self.da
-            n_pixels   = self.n_pixels   #####
-            vol_stored = np.float64(0)
-            SCALAR_dz  = (np.size( self.ip.dz ) == 1)
-            SCALAR_da  = (np.size(da) == 1)     #(assume da is scalar or grid)
-            #-----------------------------------
-            dim_q  = np.ndim( self.ip.q )
-            dim_qi = np.ndim( self.ip.qi )
-            #----------------------------------
-            for k in range(self.ip.nz):
-                #--------------------------------------
-                # In this loop, dz is always a scalar
-                #--------------------------------------
-                if (SCALAR_dz):    
-                    dz = self.ip.dz
-                else:    
-                    dz = self.ip.dz[k]
-                if (dim_q == 3):    
-                    qq = self.ip.q[k,:,:]
-                else:    
-                    qq = self.ip.q[k]
-                if (dim_qi == 3):    
-                    qqi = self.ip.qi[k,:,:]
-                else:    
-                    qqi = self.ip.qi[k]
-                #----------------------------------------
-                # Get increase in q over initial values
-                # (but q may have decreased due to ET)
-                #----------------------------------------
-                dq = (qq - qqi)   #(grid or scalar)
-                da
-                SCALAR_dq = (np.size(dq) == 1)
-                if (SCALAR_da and SCALAR_dq):    
-                    dm = dq * (dz * da * n_pixels)      #(da is a SCALAR)
-                else:    
-                    dm = np.sum(np.double(dq * (da * dz)))    #(da is a GRID)
-                vol_stored += dm
-            mass_error = np.float64(100) * (vol_IN - vol_stored) / vol_IN
-            err_str = ('%6.2f' % mass_error) + ' % '
-            TF_Print('Volume stored      = ' + TF_String(vol_stored) + ' [m^3]')
-            TF_Print('Volume error       = ' + err_str)
-        TF_Print(' ')
-
-    #   print_mass_balance_report()
+#     def print_mass_balance_report(self):            
+#
+#     #   print_mass_balance_report()
     #-------------------------------------------------------------
 
     

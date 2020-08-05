@@ -1,8 +1,8 @@
 
 #-------------------------------------------------------------------     
-# Copyright (c) 2013-2016, Scott D. Peckham
+# Copyright (c) 2013-2020, Scott D. Peckham
 #
-# Apr 2013. New time interpolator class from/for framework3.py.
+# Apr 2013. New time interpolator class from/for emeli.py.
 #
 #-------------------------------------------------------------------
 #
@@ -181,13 +181,11 @@ class time_interpolator():
         self.comp_set             = comp_set
         self.provider_comp_list   = comp_names
         self.vars_provided        = vars_provided
-        self.interpolation_method = method
-        print('Time interpolation method = ' + method)
-        print(' ')
-        
+        self.interpolation_method = method.title()    ########
+     
     #   __init__()
     #----------------------------------------------------------   
-    def initialize( self ):
+    def initialize( self, SILENT=False ):
 
         #------------------------------------------------------------
         # Note: This function initializes a dictionary called:
@@ -209,9 +207,13 @@ class time_interpolator():
         #       we could avoid some extra work.  But this works.
         #-------------------------------------------------------------
         # Note: provider_comp_list always includes the Driver.
-        #-------------------------------------------------------------        
+        #-------------------------------------------------------------
+        self.SILENT = SILENT        
         method = self.interpolation_method
-        
+        if not(self.SILENT):
+            print('Time interpolation method = ' + method)
+            print()
+  
         #----------------------------     
         # Case of no interpolation
         # (i.e. "steps" or "jumps")
@@ -622,11 +624,12 @@ class time_interpolator():
             #------------------------------------
             bmi_time = bmi.get_current_time()
             if (time > bmi_time):
-                print('#########################################')
-                print(' ERROR: time > bmi_time in get_values().')
-                print('        time, bmi_time =', time, bmi_time)
-                print('        comp_name =', comp_name)
-                print('#########################################')
+                print('--------------------------------------------')
+                print(' WARNING: (in time_interpolation.py)')
+                print('     time > bmi_time in bmi.get_values().')
+                print('     time, bmi_time =', time, bmi_time)
+                print('     comp_name =', comp_name)
+                print('--------------------------------------------')
                 print(' ')
                 
             return bmi.get_values( long_var_name )

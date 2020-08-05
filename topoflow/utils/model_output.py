@@ -49,7 +49,7 @@ from . import text_ts_files
 # import text_ps_files  # (not written yet)
 
 #-------------------------------------------------------------------
-def check_netcdf():
+def check_netcdf( SILENT=False ):
 
     #---------------------------------------------------
     # Try to import the Nio module from PyNIO package.
@@ -61,12 +61,15 @@ def check_netcdf():
     #---------------------------------------------------
     try:
         import netCDF4
-        print('Imported netCDF4 version: ' + netCDF4.__version__)
+        if not(SILENT):
+            print('Imported netCDF4 version: ' + netCDF4.__version__)
     except:
-        print(' ')
-        print('SORRY, Cannot write netCDF files because')
-        print('the "netCDF4" package cannot be imported.')
-        print(' ')
+        if not(SILENT):
+            print()
+            print('SORRY, Cannot write netCDF files because')
+            print('the "netCDF4" package cannot be imported.')
+            print()
+            
 #         python_version = sys.version[:3]
 #         if (python_version != '2.6'):
 #             print 'Note that "PyNIO" is only installed for'
@@ -74,40 +77,40 @@ def check_netcdf():
 #             print 'The current Python version is:', python_version
 
 #   check_netcdf()
-    #----------------------------------------------------------
-    def get_dtype_map(self):
+#----------------------------------------------------------
+def get_dtype_map(self):
 
-        #----------------------------------------
-        # Possible settings for "dtype_code"
-        #----------------------------------------------------
-        # These two-char codes are used for netCDF4 package
-        #----------------------------------------------------
-        # See:  http://unidata.github.io/netcdf4-python/
-        #----------------------------------------------------
-        dtype_map = {'float64':'f8', 'float32':'f4',
-                        'int64':'i8', 'int32':'i4',
-                        'int16':'i2', 'int8':'i',
-                        'S|100':'S1'}  # ( ????? )       
+    #----------------------------------------
+    # Possible settings for "dtype_code"
+    #----------------------------------------------------
+    # These two-char codes are used for netCDF4 package
+    #----------------------------------------------------
+    # See:  http://unidata.github.io/netcdf4-python/
+    #----------------------------------------------------
+    dtype_map = {'float64':'f8', 'float32':'f4',
+                 'int64':'i8', 'int32':'i4',
+                 'int16':'i2', 'int8':'i',
+                 'S|100':'S1'}  # ( ????? )       
         
-        #-------------------------------------------------
-        # These one-char codes are used for Nio in PyNIO
-        #-------------------------------------------------
-        # dtype_code = "d"  # (double, Float64)
-        # dtype_code = "f"  # (float,  Float32)
-        # dtype_code = "l"  # (long,   Int64)
-        # dtype_code = "i"  # (int,    Int32)
-        # dtype_code = "h"  # (short,  Int16)
-        # dtype_code = "b"  # (byte,   Int8)
-        # dtype_code = "S1" # (char)
-        #-------------------------------------------
+    #-------------------------------------------------
+    # These one-char codes are used for Nio in PyNIO
+    #-------------------------------------------------
+    # dtype_code = "d"  # (double, Float64)
+    # dtype_code = "f"  # (float,  Float32)
+    # dtype_code = "l"  # (long,   Int64)
+    # dtype_code = "i"  # (int,    Int32)
+    # dtype_code = "h"  # (short,  Int16)
+    # dtype_code = "b"  # (byte,   Int8)
+    # dtype_code = "S1" # (char)
+    #-------------------------------------------
 #         dtype_map = {'float64':'d', 'float32':'f',
 #                         'int64':'l', 'int32':'i',
 #                         'int16':'s', 'int8':'b',
 #                         'S|100':'S1'}  # (check last entry)                      
 
-        return dtype_map
+    return dtype_map
     
-    #   get_dtype_map()
+#   get_dtype_map()
 #-------------------------------------------------------------------
 def open_new_gs_file(self, file_name, info=None,
                      var_name='X',
@@ -309,7 +312,7 @@ def open_new_ts_file(self, file_name, IDs, ####
                      units_name='None',
                      dtype='float32',
                      time_units='minutes'):
-
+                     
     #----------------------------------
     # Build lists for var_names, etc.
     #----------------------------------
@@ -336,7 +339,7 @@ def open_new_ts_file(self, file_name, IDs, ####
         var_names.append( vname )
         long_names.append( long_name )
         units_names.append( units_name )
-        dtypes.append( dtype )   #######
+        dtypes.append( dtype )
 
     #-------------------------------------
     # Get temporal resolution (time_res) 
@@ -348,26 +351,26 @@ def open_new_ts_file(self, file_name, IDs, ####
     # Open new netCDF file to write time series
     # using var_name to build variable names
     #--------------------------------------------
-    try:              
-        ncts_unit_str = "self." + var_name + "_ncts_unit"
-        ncts_file_str = "self." + var_name + "_ncts_file"
-        ts_file_str   = "self." + var_name + "_ts_file"
-        exec( ncts_file_str + "= file_utils.replace_extension(" +
-              ts_file_str + ", '.nc')" )
-        exec( ncts_unit_str + "=" + "ncts_files.ncts_file()" )
-        exec( ncts_unit_str + ".open_new_file(" + ncts_file_str +
-              ", self.rti, self.time_info," +
-              "var_names, long_names, units_names, dtypes=dtypes," +
-              "time_units=time_units, time_res=time_res_min)" )
-        MAKE_TTS = False
-    except:
-        print('ERROR: Unable to open new netCDF file:')
-        vstr = 'self.' + var_name + '_ncts_file'
-        exec( "print('      ' + " + vstr + ")" )
-        print(' ')
-        print('Will write time series to multi-column text file.')
-        print(' ')
-        MAKE_TTS = True
+#     try:              
+    ncts_unit_str = "self." + var_name + "_ncts_unit"
+    ncts_file_str = "self." + var_name + "_ncts_file"
+    ts_file_str   = "self." + var_name + "_ts_file"
+    exec( ncts_file_str + "= file_utils.replace_extension(" +
+          ts_file_str + ", '.nc')" )
+    exec( ncts_unit_str + "=" + "ncts_files.ncts_file()" )
+    exec( ncts_unit_str + ".open_new_file(" + ncts_file_str +
+          ", self.rti, self.time_info," +
+          "var_names, long_names, units_names, dtypes=dtypes," +
+          "time_units=time_units, time_res=time_res_min)" )
+    MAKE_TTS = False
+#     except:
+#         print('ERROR: Unable to open new netCDF file:')
+#         vstr = 'self.' + var_name + '_ncts_file'
+#         exec( "print('      ' + " + vstr + ")" )
+#         print(' ')
+#         print('Will write time series to multi-column text file.')
+#         print(' ')
+#         MAKE_TTS = True
                       
     #-------------------------------------------
     # Always save time series in a text file ?
@@ -401,7 +404,10 @@ def add_values_at_IDs(self, time_min, var, var_name, IDs):
 
 ##    ncts_unit_str = "self." + var_name + "_ncts_unit"   
 ##    exec( ncts_unit_str + ".add_values_at_IDs( time_min, var, var_name, IDs )")
-              
+
+    #-------------------------------------------     
+    # Save time series values to a netCDF file
+    #-------------------------------------------         
     try:
         ncts_unit_str = "self." + var_name + "_ncts_unit"   
         exec( ncts_unit_str + ".add_values_at_IDs( time_min, var, var_name, IDs )")
@@ -413,6 +419,9 @@ def add_values_at_IDs(self, time_min, var, var_name, IDs):
         #------------------------------------------------
         # print 'ERROR: Unable to add values to netCDF file.'
 
+    #-----------------------------------------     
+    # Save time series values to a text file
+    #----------------------------------------- 
     try:
         tts_unit_str = "self." + var_name + "_tts_unit"
         exec( tts_unit_str + ".add_values_at_IDs( time_min, var, IDs )" )
@@ -462,7 +471,7 @@ def close_ts_file(self, var_name):
 def open_new_ps_file(self, file_name, IDs, ####
                      z_values=numpy.arange(10),
                      z_units='m',
-                     var_name='X',
+                     var_name='q',
                      long_name='Unknown',
                      units_name='None',
                      dtype='float32',
@@ -475,6 +484,7 @@ def open_new_ps_file(self, file_name, IDs, ####
     var_names   = []
     long_names  = []
     units_names = []
+    dtypes      = []
     rows        = IDs[0]
     cols        = IDs[1]
     for k in range(n_IDs):
@@ -494,30 +504,37 @@ def open_new_ps_file(self, file_name, IDs, ####
         var_names.append( vname )
         long_names.append( long_name )
         units_names.append( units_name )
-    
+        dtypes.append( dtype )
+
+    #-------------------------------------
+    # Get temporal resolution (time_res) 
+    #-------------------------------------
+    time_res_sec  = self.save_pixels_dt  # [seconds]
+    time_res_min  = (time_res_sec / 60)  # [minutes]
+                
     #--------------------------------------------
     # Open new netCDF file to write time series
     # using var_name to build variable names
     #--------------------------------------------
-    try:
-        ncps_unit_str = "self." + var_name + "_ncps_unit"
-        ncps_file_str = "self." + var_name + "_ncps_file"
-        ps_file_str   = "self." + var_name + "_ps_file"
-        exec( ncps_file_str + "= file_utils.replace_extension(" +
-              ps_file_str + ", '.nc')" )
-        exec( ncps_unit_str + "=" + "ncps_files.ncps_file()" )
-        exec( ncps_unit_str + ".open_new_file(" + ncps_file_str +
-              ", z_values, z_units" +
-              ", var_names, long_names, units_names," +
-              "dtype=dtype, " +  ## (11/5/13)
-              "time_units=time_units)" )
-        MAKE_TPS = False
-    except:
-        # pass
-        print('ERROR: Unable to open new netCDF file:')
-        vstr = 'self.' + var_name + '_ncps_file'
-        exec( "print('      ' + " + vstr + ")" )
-        print(' ')
+#     try:
+    ncps_unit_str = "self." + var_name + "_ncps_unit"
+    ncps_file_str = "self." + var_name + "_ncps_file"
+    ps_file_str   = "self." + var_name + "_ps_file"
+    exec( ncps_file_str + "= file_utils.replace_extension(" +
+          ps_file_str + ", '.nc')" )
+    exec( ncps_unit_str + "=" + "ncps_files.ncps_file()" )
+    exec( ncps_unit_str + ".open_new_file(" + ncps_file_str +
+          ", self.rti, self.time_info, " +
+          "z_values, z_units, " +
+          "var_names, long_names, units_names, dtypes=dtypes," +
+          "time_units=time_units, time_res=time_res_min)" )
+    MAKE_TPS = False
+#     except:
+#         # pass
+#         print('ERROR: Unable to open new netCDF file:')
+#         vstr = 'self.' + var_name + '_ncps_file'
+#         exec( "print('      ' + " + vstr + ")" )
+#         print(' ')
 ##        print 'Will write profile series to text file.'
 ##        print ' '
 ##        MAKE_TPS = True
@@ -554,13 +571,24 @@ def add_profiles_at_IDs(self, var, var_name, IDs, time_min):
 
     ncps_unit_str = "self." + var_name + "_ncps_unit"   
     exec( ncps_unit_str + ".add_profiles_at_IDs( var, var_name, IDs, time_min )")
-        
-##    try:
-##        ncps_unit_str = "self." + var_name + "_ncps_unit"   
-##        exec( ncps_unit_str + ".add_profiles_at_IDs( var, var_name, IDs, time_min )")
-##    except:
+
+    #--------------------------------------
+    # Write profile data to a netCDF file
+    #--------------------------------------               
+#     try:
+#         ncps_unit_str = "self." + var_name + "_ncps_unit"   
+#         exec( ncps_unit_str + ".add_profiles_at_IDs( var, var_name, IDs, time_min )")
+#     except:
+#         pass
+        #------------------------------------------------
+        # Don't want to print this every time.
+        # Could use "self.SAVE_CDF = False" to disable.
+        #------------------------------------------------
 ##        print 'ERROR: Unable to add profiles to netCDF file.'
 
+    #------------------------------------
+    # Write profile data to a text file
+    #------------------------------------
 ##    try:
 ##        tps_unit_str = "self." + var_name + "_tps_unit"
 ##        exec( tps_unit_str + ".add_profiles_at_IDs( var, IDs, time_min )" )

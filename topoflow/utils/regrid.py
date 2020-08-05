@@ -1,6 +1,8 @@
 
-#  Copyright (c) 2019, Scott D. Peckham
+#  Copyright (c) 2019-2020, Scott D. Peckham
 #  August, September, October, Nov. 2019
+#  Jun. 2020.  Updated create_rts_from_nc_files() to suppport
+#              non-precip variables.
 
 #-------------------------------------------------------------------
 
@@ -25,7 +27,8 @@
 #  fix_gpm_raster_bounds()
 #  fix_gpm_file_as_geotiff
 #  gdal_regrid_to_dem_grid()
-#  create_rts_from_nc_files()
+#  create_rts_from_nc_files()       ### Create a rainfall grid stack
+#  create_rts_from_chirps_files()
 
 #-----------------
 #  Commented out
@@ -36,8 +39,10 @@
 #-------------------------------------------------------------------
 import numpy as np
 import gdal, osr  ## ogr
-import glob
+import glob, sys
 import os.path
+
+from . import rti_files
 
 ## from . import rts_files   # (avoid this extra dependency)
 
@@ -446,9 +451,9 @@ def clip_geotiff(in_file=None, out_file=None,
 #   clip_geotiff()
 #-------------------------------------------------------------------  
 def save_grid_to_geotiff( new_tif_file, grid,
-                          ulx, uly, xres, yres):
+                          ulx, uly, xres, yres, nodata=None):
                           #### nodata ):
-
+                              
     #---------------------------------------------------------
     # Notes:
     #---------------------------------------------------------
@@ -466,7 +471,7 @@ def save_grid_to_geotiff( new_tif_file, grid,
     # yres = geotransform[5]  # (not yrtn !!) 
         
     ncols  = grid.shape[1]
-    nrows  = grid.shape[2]
+    nrows  = grid.shape[0]
     nbands = 1
     xrtn   = 0.0
     yrtn   = 0.0
@@ -483,6 +488,7 @@ def save_grid_to_geotiff( new_tif_file, grid,
     outRaster.SetGeoTransform((ulx, xres, xrtn, uly, yrtn, yres))
     outband = outRaster.GetRasterBand(1)
     outband.WriteArray( grid )
+    outband.SetNoDataValue( nodata )
     outRasterSRS = osr.SpatialReference()
     #------------------------------------------
     # Need to specify Projection from scratch
@@ -498,8 +504,8 @@ def save_grid_to_geotiff( new_tif_file, grid,
 #   save_grid_to_geotiff()
 #-------------------------------------------------------------------
 def regrid_rts_file( rts_file_in, rts_file_out,
-        xres_in, yres_in, nx_in, ny_in,
-        xres_out, yres_out,
+        xres_in_sec,  yres_in_sec, nx_in, ny_in,
+        xres_out_sec, yres_out_sec, resample_algo='bilinear',
         BARO=True, LOL_KURU=False):
 
     #---------------------------------------
@@ -551,6 +557,7 @@ def regrid_rts_file( rts_file_in, rts_file_out,
     #-----------------------------------------
     # Prepare to read grids from RTS file in
     #-----------------------------------------
+    nodata    = None
     dtype     = 'float32'    
     grid_in   = np.zeros( (nx_in, ny_in), dtype=dtype )
     n_values  = nx_in * ny_in
@@ -571,23 +578,24 @@ def regrid_rts_file( rts_file_in, rts_file_out,
 
         #---------------------------------------------      
         # Save grid (an ndarray) to GeoTIFF tmp_file
+        ####### xres_in_sec, or xres_deg ????
+        ########################################
         #---------------------------------------------
         save_grid_to_geotiff( tmp_file, grid,
-                              ulx, uly, xres_in, yres_in)
+                              ulx, uly, xres_in_deg, yres_in_deg)
 
         #------------------------------------------
         # Resample tmp_file to xres_out, yres_out
         # and save to tmp_file2
         #------------------------------------------
-#         out_xres_sec = (xres_out * 3600.0)
-#         out_yres_sec = (yres_out * 3600.0)
+#         out_xres_sec = (out_xres_deg * 3600.0)
+#         out_yres_sec = (out_yres_deg * 3600.0)
 #         regrid_geotiff(in_file=tmp_file, out_file=tmp_file2, 
 #                    out_bounds=None,
 #                    out_xres_sec=out_xres_sec, out_yres_sec=out_yres_sec,
 #                    #### in_nodata, out_nodata, 
 #                    RESAMPLE_ALGO='bilinear', REPORT=True):
-
-#####                   
+                  
         #---------------------------------------------
         # Read ndarray from GeoTIFF into GDAL object
         #---------------------------------------------
@@ -595,10 +603,13 @@ def regrid_rts_file( rts_file_in, rts_file_out,
         
         #----------------------------------------- 
         # Resample to grid to xres_out, yres_out
-        #-----------------------------------------        
+        #-----------------------------------------
+        xres_out_deg = (xres_out_sec / 3600.0)
+        yres_out_deg = (yres_out_sec / 3600.0)       
         grid2 = gdal_regrid_to_dem_grid( ds_in, tmp_file2,
-                 nodata, bounds_in, xres_out, yres_out,
-                 RESAMPLE_ALGO='bilinear', VERBOSE=False)
+                    bounds_out, xres_out_deg, yres_out_deg,
+                    nodata=nodata, VERBOSE=False,
+                    RESAMPLE_ALGO=resample_algo)
         #------------------------
         # Close the tmp tif_file
         #------------------------
@@ -643,7 +654,7 @@ def regrid_rts_file( rts_file_in, rts_file_out,
 #   regrid_rts_file()
 #-------------------------------------------------------------------
 #-------------------------------------------------------------------
-def read_nc_grid( nc_file=None, var_name='HQprecipitation',
+def read_nc_grid( nc_file=None, var_name='precipitationCal',
                   REPORT=False):
 
     if (nc_file == None):
@@ -662,7 +673,7 @@ def read_nc_grid( nc_file=None, var_name='HQprecipitation',
             
 #   read_nc_grid()
 #-------------------------------------------------------------------
-# def read_nc_as_array( nc_file=None, var_name='HQprecipitation',
+# def read_nc_as_array( nc_file=None, var_name='precipitationCal',
 #                       REPORT=False):
 #                       
 #     ds = gdal.Open( nc_file )
@@ -684,23 +695,25 @@ def read_nc_grid( nc_file=None, var_name='HQprecipitation',
 #------------------------------------------------------------------- 
 def gdal_open_nc_file( nc_file, var_name, VERBOSE=False):
 
+    if (VERBOSE):  print('Opening netCDF file...')
     ### ds_in = gdal.Open("NETCDF:{0}:{1}".format(nc_file, var_name), gdal.GA_ReadOnly )
     ds_in  = gdal.Open("NETCDF:{0}:{1}".format(nc_file, var_name) )
     band   = ds_in.GetRasterBand(1)
     nodata = band.GetNoDataValue()
 
+    if (VERBOSE):  print('Reading grid of values...')
     g1 = band.ReadAsArray()
     ## g1 = ds_in.ReadAsArray(0, 0, ds_in.RasterXSize, ds_in.RasterYSize)
 
     if (VERBOSE):
-        print( 'grid1: min =', g1.min(), 'max =', g1.max() )
-        print( 'grid1.shape =', g1.shape )
-        print( 'grid1.dtype =', g1.dtype )
-        print( 'grid1 nodata =', nodata )
-        w  = np.where(g1 > nodata)
+        print( 'grid: min =', g1.min(), ', max =', g1.max() )
+        print( 'grid.shape =', g1.shape )
+        print( 'grid.dtype =', g1.dtype )
+        print( 'grid nodata =', nodata )
+        w  = np.where(g1 == nodata)
         nw = w[0].size
-        print( 'grid1 # data =', nw)
-        print( ' ' )
+        print( 'nodata count =', nw)
+        print()
 
     return (ds_in, g1, nodata)
 
@@ -744,8 +757,9 @@ def fix_gpm_raster_bounds( ds, VERBOSE=False):
 #   fix_gpm_raster_bounds()
 #------------------------------------------------------------------- 
 def fix_gpm_file_as_geotiff( nc_file, var_name, out_file, 
-                             out_nodata=0.0, VERBOSE=False):
+                             out_nodata=None, VERBOSE=False):
 
+    if (VERBOSE):  print('Reading data from netCDF file...')
     ### raster = gdal.Open("NETCDF:{0}:{1}".format(nc_file, var_name), gdal.GA_ReadOnly )
     raster  = gdal.Open("NETCDF:{0}:{1}".format(nc_file, var_name) )
     band   = raster.GetRasterBand(1)
@@ -771,13 +785,13 @@ def fix_gpm_file_as_geotiff( nc_file, var_name, out_file,
     raster = None    # Close the nc_file
 
     if (VERBOSE):
-        print( 'array: min  =', array.min(), 'max =', array.max() )
-        print( 'array.shape =', array.shape )
-        print( 'array.dtype =', array.dtype )
-        print( 'array nodata =', nodata )
-        w  = np.where(array > nodata)
+        print( 'grid: min   =', array.min(), ', max =', array.max() )
+        print( 'grid.shape  =', array.shape )
+        print( 'grid.dtype  =', array.dtype )
+        print( 'grid nodata =', nodata )
+        w  = np.where(array == nodata)
         nw = w[0].size
-        print( 'array # data =', nw)
+        print( 'nodata count =', nw)
         print( ' ' )
 
     #----------------------------------------------    
@@ -785,19 +799,23 @@ def fix_gpm_file_as_geotiff( nc_file, var_name, out_file,
     # a           = [[7,4,1],[8,5,2],[9,6,3]]
     # np.rot90(a) = [[1,2,3],[4,5,6],[7,8,9]]
     #----------------------------------------------
+    if (VERBOSE):  print('Rotating grid (90 deg ccw)...')
     ### array2 = np.transpose( array )
     array2 = np.rot90( array )    ### counter clockwise
     ncols2 = nrows
     nrows2 = ncols
 
-    #-------------------------       
-    # Change the nodata value
-    #-------------------------
-    array2[ array2 <= nodata ] = out_nodata
+    #-----------------------------       
+    # Change the nodata value ?
+    # This may lead to problems.
+    #-----------------------------
+    if (out_nodata is not None):
+        array2[ array2 <= nodata ] = out_nodata
     
     #-----------------------------------------    
     # Build new geotransform & projectionRef
     #-----------------------------------------
+    if (VERBOSE):  print('Adjusting metadata...')
     lrx    = bounds[2]
     lry    = bounds[1]
     ulx2   = lry
@@ -816,6 +834,7 @@ def fix_gpm_file_as_geotiff( nc_file, var_name, out_file,
     #------------------------------------
     # Write new array to a GeoTIFF file
     #------------------------------------
+    if (VERBOSE):  print('Writing grid to GeoTIFF file...')
     driver = gdal.GetDriverByName('GTiff')
     outRaster = driver.Create(out_file, ncols2, nrows2, 1, gdal.GDT_Float32)
     outRaster.SetGeoTransform( geotransform2 )
@@ -830,12 +849,16 @@ def fix_gpm_file_as_geotiff( nc_file, var_name, out_file,
     # Close the out_file
     #---------------------
     outRaster = None
+    if (VERBOSE):
+        print('Finished.')
+        print()
     
 #   fix_gpm_file_as_geotiff()
 #-------------------------------------------------------------------
 def gdal_regrid_to_dem_grid( ds_in, tmp_file, 
-         nodata, DEM_bounds, DEM_xres_deg, DEM_yres_deg,
-         RESAMPLE_ALGO='bilinear', VERBOSE=False):
+         DEM_bounds, DEM_xres_deg, DEM_yres_deg,
+         nodata=None, RESAMPLE_ALGO='bilinear',
+         VERBOSE=False, IN_MEMORY=False):
 
     #-----------------------------------   
     # Specify the resampling algorithm
@@ -869,26 +892,85 @@ def gdal_regrid_to_dem_grid( ds_in, tmp_file,
     grid = ds_tmp.ReadAsArray()
     
     ds_tmp = None   # Close tmp_file
-   
+    if (IN_MEMORY):
+        gdal.Unlink( tmp_file )  ######## DOUBLE-CHECK THIS
+                   
     return grid
 
 #   gdal_regrid_to_dem_grid()       
 #-------------------------------------------------------------------    
-def create_rts_from_nc_files( rts_file='TEST.rts',
-                              IN_MEMORY=False, VERBOSE=False,
-                              NC4=False):
+def create_rts_from_nc_files( rts_file='TEST.rts', NC4=False,
+           var_name=None, GPM=True, resample_algo='bilinear',
+           BARO_60=False, IN_MEMORY=False, VERBOSE=False,
+           DEM_bounds=None, DEM_xres_sec=None, DEM_yres_sec=None,
+           DEM_ncols=None, DEM_nrows=None, SILENT=False):
 
+    #------------------------------------
+    # Note: GPM and GLDAS are currently
+    #       the only supported products
+    #------------------------------------
+    GLDAS = not(GPM)  #############
+    
+    #------------------------------------------------------
+    # Note: See function above for resampling algorithms.
     #------------------------------------------------------
     # For info on GDAL constants, see:
     # https://gdal.org/python/osgeo.gdalconst-module.html
-    #------------------------------------------------------  
-    if (rts_file == 'TEST.rts'):
-        #-----------------------------------------------------------
-        DEM_bounds = [24.079583333333,  6.565416666666, 27.379583333333, 10.132083333333 ]
-        DEM_xres   = 1./120   # (30 arcsecs = 30/3600 degrees)
-        DEM_yres   = 1./120   # (30 arcsecs = 30/3600 degrees)
-        DEM_ncols  = 396
-        DEM_nrows  = 428
+    #------------------------------------------------------
+    if (BARO_60):
+        DEM_bounds = [ 34.221249999999, 7.362083333332, 36.450416666666, 9.503749999999]
+        ### DEM_bounds = [ 7.362083333332, 34.221249999999, 9.503749999999, 36.450416666666]
+        DEM_xres_sec = 60.0   # (60 arcsecs = 60/3600 degrees)
+        DEM_yres_sec = 60.0
+        DEM_ncols  = 134
+        DEM_nrows  = 129
+        
+    #--------------------------------------------------------    
+    # See: Pongo_30sec DEM: MINT_2019/__Regions/South_Sudan
+    #      Adjusted this later as the Lol-Kuru.
+    #--------------------------------------------------------     
+#     if (PONGO_30):
+#         DEM_bounds = [24.079583333333,  6.565416666666, 27.379583333333, 10.132083333333]
+#         ## DEM_bounds = [6.565416666666, 24.079583333333,  10.132083333333, 27.379583333333]
+#         DEM_xres   = 1./120   # (30 arcsecs = 30/3600 degrees)
+#         DEM_yres   = 1./120   # (30 arcsecs = 30/3600 degrees)
+#         DEM_ncols  = 396
+#         DEM_nrows  = 428
+
+    if (DEM_bounds is None) or (DEM_xres_sec is None) or \
+       (DEM_yres_sec is None) or (DEM_ncols is None) or (DEM_nrows is None):
+        print('ERROR:  All DEM bounding box information is required.')
+        return
+
+    #---------------------------------------------
+    # Convert DEM_xres_sec to DEM_xres_deg, etc.
+    #---------------------------------------------
+    DEM_xres_deg = (DEM_xres_sec / 3600.0)
+    DEM_yres_deg = (DEM_yres_sec / 3600.0)
+           
+    #----------------------------------------
+    # Set the name of the variable (precip)
+    #----------------------------------------
+    # IMERG Technical Documentation, Table 1,
+    # p. 25 (Huffman et al. (2019)).
+    if (GPM):
+        #------------------------------------------
+        # IMERG Technical Documentation, Table 1,
+        # p. 25 (Huffman et al. (2019)).
+        # Should be 'precipitationCal' and NOT
+        #   HQprecipitation (microwave only).
+        #------------------------------------------
+        if (var_name is None):
+            var_name = 'precipitationCal'    # [mmph]
+            ## var_name = 'HQprecipitation'
+    #------------------------------------------------  
+    if (GLDAS):
+        if (var_name is None):
+            var_name = 'Rainf_tavg'   ## [kg m-2 s-1]
+        GLDAS_RAIN = (var_name == 'Rainf_tavg')
+    #------------------------------------------------     
+    if (var_name is None):
+        print('ERROR: var_name is required.')
 
     #-----------------------------------------    
     # Use a temp file in memory or on disk ?
@@ -910,37 +992,65 @@ def create_rts_from_nc_files( rts_file='TEST.rts',
         nc_file_list = glob.glob( '*.nc4' )
     else:
         nc_file_list = glob.glob( '*.nc' )
-    var_name = "HQprecipitation"    # HQ = high quality;  1/2 hourly, mmph
-    count = 0
-    bad_count = 0
-    BAD_FILE = False
-    #### rts_nodata = -9999.0    #################
-    rts_nodata = 0.0    # (good for rainfall rates; not general)
-    Pmax   = -1
-    tif_file = 'TEMP1.tif'
-             
-    for nc_file in nc_file_list:
-        #-------------------------------
-        # Open the original netCDF file
-        #--------------------------------
-        ## (ds_in, grid1, nodata) = gdal_open_nc_file( nc_file, var_name, VERBOSE=True)
-  
-        #------------------------------------------
-        # Option to fix problem with bounding box
-        #------------------------------------------
-        ### fix_gpm_raster_bounds( ds_in )
 
-        #------------------------------------------
-        # Fix GPM netCDF file, resave as GeoTIFF, 
-        # then open the new GeoTIFF file
-        #------------------------------------------
-        fix_gpm_file_as_geotiff( nc_file, var_name, tif_file,
-                                 out_nodata=rts_nodata )
-        ds_in = gdal.Open( tif_file )
-        grid1 = ds_in.ReadAsArray()
-        gmax  = grid1.max()
-        Pmax  = max( Pmax, gmax )
-        band   = ds_in.GetRasterBand(1)
+    #-------------------------------------       
+    # IMPORTANT!  Sort the list of files
+    # Bug fix: 08-04-2020.
+    #-------------------------------------
+    nc_file_list = sorted( nc_file_list)
+    
+    #-------------------------------------------------
+    # It may not be wise to change the nodata values
+    # because GDAL may not recognize them as nodata
+    # during spatial interpolation, etc.
+    # This could be the cause of "artifacts".
+    #-------------------------------------------------
+    # A nodata value of zero may be okay for rainfall
+    # rates, but is not good in general.
+    #-------------------------------------------------    
+    #### rts_nodata = -9999.0    ######
+    # rts_nodata = 0.0
+    rts_nodata = None   # (do not change nodata values)
+   
+    count = 0
+    vmax  = -1e8
+    vmin  = 1e8
+    bad_count = 0
+    BAD_FILE  = False
+    tif_file  = 'TEMP1.tif'
+    
+    print('Working...') 
+    for nc_file in nc_file_list:
+        if (GPM):
+            #------------------------------------------
+            # Option to fix problem with bounding box
+            #------------------------------------------
+            ### fix_gpm_raster_bounds( ds_in )
+
+            #------------------------------------------
+            # Fix GPM netCDF file, resave as GeoTIFF, 
+            # then open the new GeoTIFF file
+            #------------------------------------------
+            if not(SILENT):  print('resaving as GeoTIFF...')
+            fix_gpm_file_as_geotiff( nc_file, var_name, tif_file,
+                                     out_nodata=rts_nodata )
+            ds_in = gdal.Open( tif_file )
+            grid1 = ds_in.ReadAsArray()
+        elif (GLDAS):
+            #-------------------------------
+            # Open the original netCDF file
+            #--------------------------------
+            (ds_in, grid1, nodata) = gdal_open_nc_file( nc_file, var_name, VERBOSE=VERBOSE)
+
+        #------------------------------------  
+        # Note: This gives min & max before
+        #       clipping to DEM bounds
+        #------------------------------------
+#         gmax  = grid1.max()
+#         gmin  = grid1.min()
+#         vmax  = max( vmax, gmax )
+#         vmin  = min( vmin, gmin )
+        band  = ds_in.GetRasterBand(1)
         nc_nodata = band.GetNoDataValue()
 
         if (VERBOSE):
@@ -950,8 +1060,9 @@ def create_rts_from_nc_files( rts_file='TEST.rts',
             print( 'grid1: min   =', grid1.min(), 'max =', grid1.max() )
             print( 'grid1.shape  =', grid1.shape )
             print( 'grid1.dtype  =', grid1.dtype )
-            print( 'grid1 nodata =', nc_nodata )
-            w  = np.where(grid1 > nc_nodata)
+            print( 'grid1 nodata =', nc_nodata, '(in original nc_file)' )
+            ### w  = np.where(grid1 > nc_nodata)
+            w  = np.where(grid1 != nc_nodata)
             nw = w[0].size
             print( 'grid1 # data =', nw)
             print( ' ' )
@@ -965,6 +1076,7 @@ def create_rts_from_nc_files( rts_file='TEST.rts',
         #-----------------------------------------------        
         # Check if the bounding boxes actually overlap
         #-----------------------------------------------
+        if not(SILENT):  print('comparing bounds...')
         ds_bounds = get_raster_bounds( ds_in, VERBOSE=False )
         if (bounds_disjoint( ds_bounds, DEM_bounds )):
             print( '###############################################')
@@ -980,87 +1092,387 @@ def create_rts_from_nc_files( rts_file='TEST.rts',
             BAD_FILE = True
 
         #-------------------------------------------
-        # Replace nodata value and save as GeoTIFF
-        #-------------------------------------------
-#         new_file = 'TEMP2.tif'
-#         resave_grid_to_geotiff( ds_in, new_file, grid1, nodata )
-#         ds_in = None  # Close the nc_file
-#         ds_in = gdal.Open( new_file )   # Open the GeoTIFF file; new nodata
-
-        #-------------------------------------------
         # Clip and resample data to the DEM's grid
         # then save to a temporary GeoTIFF file.
         #-------------------------------------------
         if not(BAD_FILE):
+            print('regridding to DEM grid...')
             grid2 = gdal_regrid_to_dem_grid( ds_in, tmp_file,
-                        rts_nodata, DEM_bounds, DEM_xres, DEM_yres,
-                        RESAMPLE_ALGO='bilinear' )
+                         DEM_bounds, DEM_xres_deg, DEM_yres_deg,
+                         nodata=rts_nodata, IN_MEMORY=IN_MEMORY,
+                         RESAMPLE_ALGO=resample_algo )
+
+            # This was already done in gdal_regrid_to_dem_grid()
+            ## ds_in = None   # Close the tmp_file
+            ## if (IN_MEMORY):
+            ##    gdal.Unlink( tmp_file )
+            
             if (VERBOSE):
                 print( 'grid2: min  =', grid2.min(), 'max =', grid2.max() )
                 print( 'grid2.shape =', grid2.shape )
                 print( 'grid2.dtype =', grid2.dtype )
-                w  = np.where(grid2 > rts_nodata)
-                nw = w[0].size
-                print( 'grid2 # data =', nw)
-                print( ' ')
-            ds_in = None   # Close the tmp_file
-            if (IN_MEMORY):
-                gdal.Unlink( tmp_file )
+                if (rts_nodata is not None):
+                    ## w  = np.where(grid2 > rts_nodata)
+                    w  = np.where(grid2 != rts_nodata)
+                    nw = w[0].size
+                    print( 'grid2 # data =', nw)
+                    print()
         else:
             grid2 = np.zeros( (DEM_nrows, DEM_ncols), dtype='float32' )
-            grid2 += rts_nodata
+            if (rts_nodata is not None):
+                grid2 += rts_nodata
  
+        if (GLDAS_RAIN):
+            #-------------------------------
+            # Convert [kg m-2 s-1] to mmph
+            #-------------------------------
+            print('converting units: [kg m-2 s-1] to [mmph]...')
+            w = (grid2 != -9999.0)        # (boolean array)
+            grid2[w] *= 3600.0  # (preserve nodata)
+
+        if (GLDAS) and (var_name == 'Tair_f_inst'):
+            #-----------------
+            # Convert K to C
+            #-----------------
+            print('converting units: Kelvin to Celsius...')
+            w = (grid2 != -9999.0)        # (boolean array)
+            grid2[w] -= 273.15  # (preserve nodata)
+                        
         #-------------------------  
         # Write grid to RTS file
         #-------------------------
         grid2 = np.float32( grid2 )
+        vmax  = max( vmax, grid2.max() )
+        vmin  = min( vmin, grid2.min() )
         grid2.tofile( rts_unit )
         count += 1
-                    
-        #--------------------------------------------
-        # Read resampled data from tmp GeoTIFF file
-        #--------------------------------------------
-        # This step shouldn't be necessary. #######
-        #--------------------------------------------
-#         ds_tmp = gdal.Open( tmp_file )
-#         ## ds_tmp = gdal.Open( tmp_file, gdal.GA_ReadOnly  )
-#         ## print( gdal.Info( ds_tmp ) )
-#         grid3  = ds_tmp.ReadAsArray()
-#         if (VERBOSE):
-#             print( 'grid3: min, max =', grid3.min(), grid3.max() )
-#             print( 'grid3.shape =', grid3.shape)
-#             print( 'grid3.dtype =', grid3.dtype)
-#             w  = np.where(grid3 > nodata)
-#             nw = w[0].size
-#             print( 'grid3 # data =', nw)
-#         ds_tmp = None   # Close tmp file
-#    
-#         if (IN_MEMORY):
-#             gdal.Unlink( tmp_file )
-#         #-------------------------  
-#         # Write grid to RTS file
-#         #-------------------------
-#         grid3 = np.float32( grid3 )
-#         ## rts_unit.write( grid3 )  # (doesn't work)
-#         grid3.tofile( rts_unit )
-#         count += 1
-
-#         if (count == 300):  ##################################
-#             break
+        if not(SILENT):  print('count =', count)
 
     #---------------------
     # Close the RTS file
     #---------------------
     rts_unit.close()
 
+    #---------------------------------------
+    # Create an RTI file for this RTS file
+    #---------------------------------------
+    rti = rti_files.make_info(grid_file=rts_file,
+              ncols=DEM_ncols, nrows=DEM_nrows,
+              xres=DEM_xres_sec, yres=DEM_yres_sec,
+              #--------------------------------------
+              data_source='TopoFlow 3.6 Regrid',
+              data_type='FLOAT',
+              byte_order=rti_files.get_rti_byte_order(),
+              pixel_geom=0,
+              zres=0.001, z_units='unknown',
+              y_south_edge=DEM_bounds[1],
+              y_north_edge=DEM_bounds[3],
+              x_west_edge=DEM_bounds[0],
+              x_east_edge=DEM_bounds[2],
+              box_units='DEGREES')
+    rti_files.write_info( rts_file, rti )
+
+    #---------------------------
+    # Determine variable units
+    #---------------------------
+    if (GPM or GLDAS_RAIN):
+        units = 'mmph'  # (GLDAS_RAIN is converted from mass flux)
+    else:
+        #-----------------------------------------------
+        # Note: This is not all of the GLDAS variables
+        #-----------------------------------------------   
+        umap = {
+        'Swnet_tavg'         : 'W m-2',
+        'Lwnet_tavg'         : 'W m-2',
+        'Rainf_tavg'         : 'kg m-2 s-1',
+        'Evap_tavg'          : 'kg m-2 s-1',
+        'Qsb_acc'            : 'kg m-2',   # (baseflow groundwater runoff)
+        'SoilMoi0_10cm_inst' : 'kg m-2',  # (soil moisture content)
+        'Albedo_inst'        : '%',
+        'Wind_f_inst'        : 'm s-1',
+        'Tair_f_inst'        : 'K' }     # (air temperature)
+        units = umap[ var_name ]
+
+    #----------------------     
+    # Print final message
+    #----------------------  
     print( ' ')
-    print( 'Max precip rate =', Pmax )
+    print( 'Variable name  =', var_name )
+    print( 'Variable units =', units)
+    print( 'max(variable)  =', vmax)
+    print( 'min(variable)  =', vmin, '(possible nodata)' )
     print( 'bad_count =', bad_count )
     print( 'n_grids   =', count )
     print( 'Finished saving data to rts file.')
     print( ' ')
     
 #   create_rts_from_nc_files()
+#-------------------------------------------------------------------    
+def create_rts_from_chirps_files( rts_file='TEST.rts', 
+           resample_algo='bilinear', BARO_60=False, 
+           DEM_bounds=None, DEM_xres_sec=None, DEM_yres_sec=None,
+           DEM_ncols=None, DEM_nrows=None,
+           VERBOSE=False, SILENT=False):
+    
+    #------------------------------------------------------
+    # Note: See function above for resampling algorithms.
+    #------------------------------------------------------
+    # For info on GDAL constants, see:
+    # https://gdal.org/python/osgeo.gdalconst-module.html
+    #------------------------------------------------------
+    if (BARO_60):
+        DEM_bounds = [ 34.221249999999, 7.362083333332, 36.450416666666, 9.503749999999]
+        ### DEM_bounds = [ 7.362083333332, 34.221249999999, 9.503749999999, 36.450416666666]
+        DEM_xres_sec = 60.0   # (60 arcsecs = 60/3600 degrees)
+        DEM_yres_sec = 60.0
+        DEM_ncols  = 134
+        DEM_nrows  = 129
+        
+    #--------------------------------------------------------    
+    # See: Pongo_30sec DEM: MINT_2019/__Regions/South_Sudan
+    #      Adjusted this later as the Lol-Kuru.
+    #--------------------------------------------------------     
+#     if (PONGO_30):
+#         DEM_bounds = [24.079583333333,  6.565416666666, 27.379583333333, 10.132083333333]
+#         ## DEM_bounds = [6.565416666666, 24.079583333333,  10.132083333333, 27.379583333333]
+#         DEM_xres   = 1./120   # (30 arcsecs = 30/3600 degrees)
+#         DEM_yres   = 1./120   # (30 arcsecs = 30/3600 degrees)
+#         DEM_ncols  = 396
+#         DEM_nrows  = 428
+
+    if (DEM_bounds is None) or (DEM_xres_sec is None) or \
+       (DEM_yres_sec is None) or (DEM_ncols is None) or (DEM_nrows is None):
+        print('ERROR:  All DEM bounding box information is required.')
+        return
+
+    #---------------------------------------------
+    # Convert DEM_xres_sec to DEM_xres_deg, etc.
+    #---------------------------------------------
+    DEM_xres_deg = (DEM_xres_sec / 3600.0)
+    DEM_yres_deg = (DEM_yres_sec / 3600.0)
+  
+    #-------------------------    
+    # Open RTS file to write
+    #-------------------------
+    rts_unit = open( rts_file, 'wb' )
+
+    #-----------------------------------------------
+    # Get list of all files in working directory
+    #  e.g. rfe_gdas.bin.2014100100 (no extension)
+    #-----------------------------------------------
+    file_list = glob.glob( 'rfe*' )
+    file_list = sorted(file_list)
+
+    #-------------------------------------------------
+    # It may not be wise to change the nodata values
+    # because GDAL may not recognize them as nodata
+    # during spatial interpolation, etc.
+    # This could be the cause of "artifacts".
+    #-------------------------------------------------
+    # A nodata value of zero may be okay for rainfall
+    # rates, but is not good in general.
+    #-------------------------------------------------    
+    #### rts_nodata = -9999.0    ######
+    # rts_nodata = 0.0
+    rts_nodata = None   # (do not change nodata values)
+   
+    count = 0
+    vmax  = -1e8
+    vmin  = 1e8
+    bad_count = 0
+    BAD_FILE  = False
+    tif_file  = 'TEMP1.tif'
+    tmp_file  = 'TEMP.tif'
+        
+    #-----------------------------------    
+    # CHIRPS Africa bounding box, etc.
+    #-----------------------------------
+    # chirps_minlat = -40.05
+    # chirps_maxlat = 40.05
+    # chirps_minlon = -20.05
+    # chirps_maxlon = 55.05
+    chirps_ulx      = -20.05
+    chirps_uly      = 40.05
+    chirps_xres_deg = 0.1
+    chirps_yres_deg = -0.1     ###########   NEED NEGATIVE HERE
+    chirps_ncols    = 751
+    chirps_nrows    = 801
+    chirps_dtype    = 'float32'
+    chirps_nodata   = -1.0
+
+    print('Working...') 
+    for chirps_file in file_list:
+        #-------------------------------------
+        # Read CHIRPS binary file (rainfall)
+        #-------------------------------------
+        print()
+        print('chirps_file =', chirps_file)
+        chirps_unit = open(chirps_file, 'rb')
+        grid = np.fromfile( chirps_unit, dtype=chirps_dtype )      
+        grid = grid.reshape( chirps_nrows, chirps_ncols )
+        chirps_unit.close()
+        
+        #------------------------------------        
+        # Flip the y-axis to make row-major
+        #------------------------------------
+        grid = np.flipud( grid )
+
+        #---------------------------    
+        # Byteswap from MSB to LSB
+        #---------------------------
+        grid = grid.byteswap()
+    
+        #-------------------------------------        
+        # Re-save grid as geotiff (for GDAL)
+        #-------------------------------------
+        if not(SILENT):  print('  resaving as GeoTIFF...')
+        new_tif_file = chirps_file + '.tif'
+        save_grid_to_geotiff( new_tif_file, grid,
+                              chirps_ulx, chirps_uly,
+                              chirps_xres_deg, chirps_yres_deg,
+                              nodata=chirps_nodata)
+                          
+        #---------------------------------------------- 
+        # Read grid & metadata from geotiff with GDAL
+        #----------------------------------------------
+        ds_in = gdal.Open( new_tif_file )
+        grid1 = ds_in.ReadAsArray()
+        #------------------------------------  
+        # Note: This gives min & max before
+        #       clipping to DEM bounds
+        #------------------------------------
+#         gmax  = grid1.max()
+#         gmin  = grid1.min()
+#         vmax  = max( vmax, gmax )
+#         vmin  = min( vmin, gmin )
+        band  = ds_in.GetRasterBand(1)
+        ### band.SetNoDataValue( chirps_nodata )   ###### SET ABOVE
+        ## chirps_nodata = band.GetNoDataValue()
+
+        if (VERBOSE):
+            print( '===============================================================')
+            print( 'count =', (count + 1) )
+            print( '===============================================================')
+            print( 'grid1: min   =', grid1.min(), 'max =', grid1.max() )
+            print( 'grid1.shape  =', grid1.shape )
+            print( 'grid1.dtype  =', grid1.dtype )
+            print( 'grid1 nodata =', chirps_nodata, '(in original file)' )
+            ## w  = np.where(grid1 > chirps_nodata)
+            w  = np.where(grid1 != chirps_nodata)
+            nw = w[0].size
+            print( 'grid1 # data =', nw)
+            print( ' ' )
+              
+        #--------------------------------------        
+        # Use gdal.Info() to print/check info
+        #--------------------------------------
+        ## print( gdal.Info( ds_in ) )
+        ## print( '===============================================================')
+
+        #-----------------------------------------------        
+        # Check if the bounding boxes actually overlap
+        #-----------------------------------------------
+        if not(SILENT):  print('  comparing bounds...')
+        ds_bounds = get_raster_bounds( ds_in, VERBOSE=False )
+        if (bounds_disjoint( ds_bounds, DEM_bounds )):
+            print( '###############################################')
+            print( 'WARNING: Bounding boxes do not overlap.')
+            print( '         New grid will contain only nodata.')
+            print( '###############################################')
+            print( 'count =', count )
+            print( 'file  =', new_tif_file )
+            print( 'ds_bounds  =', ds_bounds )
+            print( 'DEM_bounds =', DEM_bounds )
+            print( ' ')
+            bad_count += 1
+            BAD_FILE = True
+            sys.exit()
+
+        #-------------------------------------------
+        # Clip and resample data to the DEM's grid
+        # then save to a temporary GeoTIFF file.
+        #-------------------------------------------
+        if not(BAD_FILE):
+            print('  regridding to DEM grid...')
+            grid2 = gdal_regrid_to_dem_grid( ds_in, tmp_file,
+                         DEM_bounds, DEM_xres_deg, DEM_yres_deg,
+                         nodata=rts_nodata, IN_MEMORY=False,
+                         RESAMPLE_ALGO=resample_algo )
+            
+            if (VERBOSE):
+                print( 'grid2: min  =', grid2.min(), 'max =', grid2.max() )
+                print( 'grid2.shape =', grid2.shape )
+                print( 'grid2.dtype =', grid2.dtype )
+                if (rts_nodata is not None):
+                    ## w  = np.where(grid2 > rts_nodata)
+                    w  = np.where(grid2 != rts_nodata)
+                    nw = w[0].size
+                    print( 'grid2 # data =', nw)
+                    print()
+        else:
+            grid2 = np.zeros( (DEM_nrows, DEM_ncols), dtype='float32' )
+            if (rts_nodata is not None):
+                grid2 += rts_nodata
+ 
+        #-------------------------------
+        # Convert [kg m-2 s-1] to mmph
+        #-------------------------------
+        w = (grid2 != chirps_nodata)   # (boolean array)
+        grid2[w] = grid2[w] * 3600.0   # (preserve nodata)
+
+        #-------------------------  
+        # Write grid to RTS file
+        #-------------------------
+        grid2 = np.float32( grid2 )
+        vmax  = max( vmax, grid2.max() )
+        vmin  = min( vmin, grid2.min() )
+        grid2.tofile( rts_unit )
+        count += 1
+        if not(SILENT):  print('count =', count)
+
+    #---------------------
+    # Close the RTS file
+    #---------------------
+    rts_unit.close()
+
+    #---------------------------------------
+    # Create an RTI file for this RTS file
+    #---------------------------------------
+    rti = rti_files.make_info(grid_file=rts_file,
+              ncols=DEM_ncols, nrows=DEM_nrows,
+              xres=DEM_xres_sec, yres=DEM_yres_sec,
+              #--------------------------------------
+              data_source='TopoFlow 3.6 Regrid',
+              data_type='FLOAT',
+              byte_order=rti_files.get_rti_byte_order(),
+              pixel_geom=0,
+              zres=0.001, z_units='unknown',
+              y_south_edge=DEM_bounds[1],
+              y_north_edge=DEM_bounds[3],
+              x_west_edge=DEM_bounds[0],
+              x_east_edge=DEM_bounds[2],
+              box_units='DEGREES')
+    rti_files.write_info( rts_file, rti )
+
+    #---------------------------
+    # Determine variable units
+    #---------------------------
+    units = 'mmph'  # (converted from mass flux)
+
+    #----------------------     
+    # Print final message
+    #----------------------  
+    print( ' ')
+    # print( 'Variable name  =', var_name )
+    print( 'Variable units =', units)
+    print( 'max(variable)  =', vmax)
+    print( 'min(variable)  =', vmin, '(possible nodata)' )
+    print( 'bad_count =', bad_count )
+    print( 'n_grids   =', count )
+    print( 'Finished saving CHIRPS data to rts file.')
+    print( ' ')
+    
+#   create_rts_from_chirps_files()
 #-------------------------------------------------------------------
 # def regrid_geotiff_to_dem(in_file=None, out_file=None, 
 #                           DEM_bounds=None, DEM_xres=None, DEM_yres=None ):
@@ -1122,10 +1534,11 @@ def create_rts_from_nc_files( rts_file='TEST.rts',
 #      
 # #    regrid_geotiff_to_dem()
 #-------------------------------------------------------------------  
-# def resave_grid_to_geotiff( ds_in, new_file, grid1, nodata ):
+# def resave_grid_to_geotiff( ds_in, new_file, grid1, nodata=nodata ):
 # 
-#     new_nodata = -9999.0
-#     grid1[ grid1 <= nodata ] = new_nodata
+#     if (nodata is not None):
+#         new_nodata = -9999.0
+#         grid1[ grid1 != nodata ] = new_nodata
 #     
 #     ##### raster = gdal.Open( nc_file )
 #     raster = ds_in
@@ -1150,5 +1563,37 @@ def create_rts_from_nc_files( rts_file='TEST.rts',
 # 
 # #   resave_grid_to_geotiff()
 #-------------------------------------------------------------------  
-          
+# def rename_nc_files( txt_file_in=None, txt_file_out=None ):
+# 
+#     if (txt_file_in is None):
+#         txt_file_in  = 'subset_GPM_3IMERGHH_06_20200604_191328.txt'
+#     if (txt_file_out is None):
+#         txt_file_out = 'subset_GPM_2014-08.txt'
+# 
+#     in_unit  = open(txt_file_in,  'r')
+#     out_unit = open(txt_file_out, 'w')
+#     
+#     # Read a line, modify it, write new line to txt_file_out
+#     while (True):
+#         line  = in_unit.readline()
+#         if (line == ''):
+#             break
+#         words = line.split('?')
+#         ncols = len( words )
+#         #-------------------------------
+#         # Discard part after first "?"
+#         #-------------------------------
+#         new_line = words[0]
+#         out_unit.write( new_line + '\n' )
+#      
+#     #------------------
+#     # Close the files
+#     #------------------
+#     in_unit.close()
+#     out_unit.close()
+# 
+# #   rename_nc_files()
+#-------------------------------------------------------------------
+
+         
  
